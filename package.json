@@ -1,0 +1,12 @@
+{
+  "name": "syria-trading-platform",
+  "version": "1.0.0",
+  "private": true,
+  "description": "SYRIA TRADING members-only trading analysis app with auth and subscriptions.",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

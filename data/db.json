@@ -1,0 +1,24 @@
+{
+  "users": [
+    {
+      "id": "2650b82d-76aa-4fcd-b06f-901e3567a024",
+      "name": "YAZAN",
+      "email": "yazans061@gmail.com",
+      "passwordHash": "58aaa4625ae1fc4da9a364474f6a4268:ed5f92623497acb73dea20cfbe28427f64f4d1a07005b049b1ffa6503afd91ea",
+      "role": "admin",
+      "subscribed": false,
+      "plan": "",
+      "subscriptionUntil": "",
+      "createdAt": "2026-07-11T08:56:01.355Z"
+    }
+  ],
+  "sessions": [
+    {
+      "id": "63079219-d411-46da-ae7c-d049b3a933ab",
+      "userId": "2650b82d-76aa-4fcd-b06f-901e3567a024",
+      "tokenHash": "fc1a9ac5de10e80054cd3857c39d3f7646f4883aecb2c22cd142a5beaf6ff3bc",
+      "createdAt": "2026-07-11T08:56:01.356Z"
+    }
+  ],
+  "payments": []
+}
