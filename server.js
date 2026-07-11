@@ -294,8 +294,8 @@ async function analyze(req, res) {
   if (!/^[A-Z0-9]{5,20}$/.test(String(binanceSymbol || ""))) return json(res, 400, { error: "رمز العملة غير صحيح." });
   if (!/^(1m|5m|15m|30m|1h|4h|1d|1w)$/.test(String(interval || ""))) return json(res, 400, { error: "الفريم غير صحيح." });
 
-  const klinesUrl = `https://api.binance.com/api/v3/klines?symbol=${binanceSymbol}&interval=${interval}&limit=210`;
-  const priceUrl = `https://api.binance.com/api/v3/ticker/price?symbol=${binanceSymbol}`;
+const klinesUrl = `https://data-api.binance.vision/api/v3/klines?symbol=${binanceSymbol}&interval=${interval}&limit=210`;
+  const priceUrl = `https://data-api.binance.vision/api/v3/ticker/price?symbol=${binanceSymbol}`;
   const [klineRes, priceRes] = await Promise.all([fetch(klinesUrl), fetch(priceUrl)]);
   if (!klineRes.ok || !priceRes.ok) return json(res, 502, { error: "تعذر الاتصال بمزود البيانات." });
 
