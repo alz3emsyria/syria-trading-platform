@@ -2,6 +2,7 @@ const http = require("http");
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
+const { Pool } = require("pg");
 
 loadEnv();
 
@@ -9,15 +10,29 @@ const PORT = Number(process.env.PORT || 3000);
 const APP_URL = process.env.APP_URL || `http://localhost:${PORT}`;
 const SESSION_SECRET = process.env.SESSION_SECRET || crypto.randomBytes(32).toString("hex");
 const ADMIN_EMAIL = (process.env.ADMIN_EMAIL || "").toLowerCase();
-const DEV_AUTO_ACTIVATE = String(process.env.DEV_AUTO_ACTIVATE || "true") === "true";
+const DEV_AUTO_ACTIVATE = String(process.env.DEV_AUTO_ACTIVATE || "false") === "true";
 const PUBLIC_DIR = path.join(__dirname, "public");
-const DATA_DIR = path.join(__dirname, "data");
-const DB_FILE = path.join(DATA_DIR, "db.json");
 
-ensureDb();
+if (DEV_AUTO_ACTIVATE) {
+  console.warn("تحذير: DEV_AUTO_ACTIVATE=true — الاشتراك يتفعل تلقائيا بدون دفع حقيقي عبر Stripe. لا تستخدم هذا في الإنتاج.");
+}
+
+if (!process.env.DATABASE_URL) {
+  console.error("خطأ: متغير DATABASE_URL غير مضبوط. أضف قاعدة بيانات PostgreSQL على Render واربطها بهذه الخدمة.");
+}
+
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: process.env.DATABASE_URL && !/localhost|127\.0\.0\.1/.test(process.env.DATABASE_URL)
+    ? { rejectUnauthorized: false }
+    : false
+});
+
+let dbReadyPromise = ensureDb();
 
 const server = http.createServer(async (req, res) => {
   try {
+    await dbReadyPromise;
     if (req.method === "OPTIONS") return corsPreflight(req, res);
     const url = new URL(req.url, APP_URL);
 
@@ -53,19 +68,63 @@ function loadEnv() {
   }
 }
 
-function ensureDb() {
-  fs.mkdirSync(DATA_DIR, { recursive: true });
-  if (!fs.existsSync(DB_FILE)) {
-    writeDb({ users: [], sessions: [], payments: [] });
-  }
+async function ensureDb() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS users (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      email TEXT UNIQUE NOT NULL,
+      password_hash TEXT NOT NULL,
+      role TEXT NOT NULL DEFAULT 'member',
+      subscribed BOOLEAN NOT NULL DEFAULT false,
+      plan TEXT NOT NULL DEFAULT '',
+      subscription_until TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL
+    );
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS sessions (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      token_hash TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS payments (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      plan TEXT NOT NULL,
+      provider TEXT NOT NULL,
+      event_id TEXT,
+      created_at TEXT NOT NULL
+    );
+  `);
 }
 
-function readDb() {
-  return JSON.parse(fs.readFileSync(DB_FILE, "utf8"));
+function rowToUser(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    name: row.name,
+    email: row.email,
+    passwordHash: row.password_hash,
+    role: row.role,
+    subscribed: row.subscribed,
+    plan: row.plan,
+    subscriptionUntil: row.subscription_until,
+    createdAt: row.created_at
+  };
 }
 
-function writeDb(db) {
-  fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2), "utf8");
+async function findUserByEmail(email) {
+  const { rows } = await pool.query("SELECT * FROM users WHERE email = $1", [email]);
+  return rowToUser(rows[0]);
+}
+
+async function findUserById(id) {
+  const { rows } = await pool.query("SELECT * FROM users WHERE id = $1", [id]);
+  return rowToUser(rows[0]);
 }
 
 function json(res, status, body, headers = {}) {
@@ -126,16 +185,12 @@ function sign(value) {
   return crypto.createHmac("sha256", SESSION_SECRET).update(value).digest("hex");
 }
 
-function createSession(res, userId) {
+async function createSession(res, userId) {
   const token = crypto.randomBytes(32).toString("hex");
-  const db = readDb();
-  db.sessions.push({
-    id: crypto.randomUUID(),
-    userId,
-    tokenHash: hashToken(token),
-    createdAt: new Date().toISOString()
-  });
-  writeDb(db);
+  await pool.query(
+    "INSERT INTO sessions (id, user_id, token_hash, created_at) VALUES ($1, $2, $3, $4)",
+    [crypto.randomUUID(), userId, hashToken(token), new Date().toISOString()]
+  );
   const packed = `${token}.${sign(token)}`;
   res.setHeader("Set-Cookie", `st_session=${encodeURIComponent(packed)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=2592000`);
 }
@@ -144,17 +199,17 @@ function hashToken(token) {
   return crypto.createHash("sha256").update(token).digest("hex");
 }
 
-function authUser(req) {
+async function authUser(req) {
   const packed = getCookie(req, "st_session");
   if (!packed || !packed.includes(".")) return null;
   const [token, mac] = packed.split(".");
   const expectedMac = sign(token);
   if (mac.length !== expectedMac.length || !crypto.timingSafeEqual(Buffer.from(expectedMac), Buffer.from(mac))) return null;
 
-  const db = readDb();
-  const session = db.sessions.find(s => s.tokenHash === hashToken(token));
+  const { rows } = await pool.query("SELECT * FROM sessions WHERE token_hash = $1", [hashToken(token)]);
+  const session = rows[0];
   if (!session) return null;
-  return db.users.find(u => u.id === session.userId) || null;
+  return findUserById(session.user_id);
 }
 
 function publicUser(user) {
@@ -176,6 +231,7 @@ function hashPassword(password, salt = crypto.randomBytes(16).toString("hex")) {
 
 function verifyPassword(password, stored) {
   const [salt, expected] = stored.split(":");
+  if (!salt || !expected) return false;
   const actual = hashPassword(password, salt).split(":")[1];
   return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(actual));
 }
@@ -186,8 +242,8 @@ async function signup(req, res) {
   if (!name || !cleanEmail || !password || String(password).length < 8) {
     return json(res, 400, { error: "أدخل الاسم والبريد وكلمة مرور من 8 أحرف على الأقل." });
   }
-  const db = readDb();
-  if (db.users.some(u => u.email === cleanEmail)) {
+  const existing = await findUserByEmail(cleanEmail);
+  if (existing) {
     return json(res, 409, { error: "هذا البريد مسجل بالفعل." });
   }
   const user = {
@@ -201,21 +257,23 @@ async function signup(req, res) {
     subscriptionUntil: "",
     createdAt: new Date().toISOString()
   };
-  db.users.push(user);
-  writeDb(db);
-  createSession(res, user.id);
+  await pool.query(
+    `INSERT INTO users (id, name, email, password_hash, role, subscribed, plan, subscription_until, created_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+    [user.id, user.name, user.email, user.passwordHash, user.role, user.subscribed, user.plan, user.subscriptionUntil, user.createdAt]
+  );
+  await createSession(res, user.id);
   return json(res, 201, { user: publicUser(user) });
 }
 
 async function login(req, res) {
   const { email, password } = await bodyJson(req);
   const cleanEmail = String(email || "").trim().toLowerCase();
-  const db = readDb();
-  const user = db.users.find(u => u.email === cleanEmail);
+  const user = await findUserByEmail(cleanEmail);
   if (!user || !verifyPassword(String(password || ""), user.passwordHash)) {
     return json(res, 401, { error: "بيانات الدخول غير صحيحة." });
   }
-  createSession(res, user.id);
+  await createSession(res, user.id);
   return json(res, 200, { user: publicUser(user) });
 }
 
@@ -224,25 +282,25 @@ function logout(res) {
   return json(res, 200, { ok: true });
 }
 
-function me(req, res) {
-  const user = authUser(req);
+async function me(req, res) {
+  const user = await authUser(req);
   return json(res, 200, { user: user ? publicUser(user) : null });
 }
 
 async function subscribe(req, res) {
-  const user = authUser(req);
+  const user = await authUser(req);
   if (!user) return json(res, 401, { error: "سجل الدخول أولا." });
   const { plan } = await bodyJson(req);
   const cleanPlan = plan === "yearly" ? "yearly" : "monthly";
 
   if (DEV_AUTO_ACTIVATE) {
-    const db = readDb();
-    const target = db.users.find(u => u.id === user.id);
-    target.subscribed = true;
-    target.plan = cleanPlan;
-    target.subscriptionUntil = addPlanDate(cleanPlan);
-    writeDb(db);
-    return json(res, 200, { activated: true, user: publicUser(target) });
+    const subscriptionUntil = addPlanDate(cleanPlan);
+    await pool.query(
+      "UPDATE users SET subscribed = true, plan = $1, subscription_until = $2 WHERE id = $3",
+      [cleanPlan, subscriptionUntil, user.id]
+    );
+    const updated = await findUserById(user.id);
+    return json(res, 200, { activated: true, user: publicUser(updated) });
   }
 
   const checkoutUrl = await createStripeCheckout(user, cleanPlan);
@@ -286,7 +344,7 @@ function addPlanDate(plan) {
 }
 
 async function analyze(req, res) {
-  const user = authUser(req);
+  const user = await authUser(req);
   if (!user) return json(res, 401, { error: "سجل الدخول أولا." });
   if (!user.subscribed && user.role !== "admin") return json(res, 403, { error: "هذه الميزة للأعضاء المشتركين فقط." });
 
@@ -294,7 +352,7 @@ async function analyze(req, res) {
   if (!/^[A-Z0-9]{5,20}$/.test(String(binanceSymbol || ""))) return json(res, 400, { error: "رمز العملة غير صحيح." });
   if (!/^(1m|5m|15m|30m|1h|4h|1d|1w)$/.test(String(interval || ""))) return json(res, 400, { error: "الفريم غير صحيح." });
 
-const klinesUrl = `https://data-api.binance.vision/api/v3/klines?symbol=${binanceSymbol}&interval=${interval}&limit=210`;
+  const klinesUrl = `https://data-api.binance.vision/api/v3/klines?symbol=${binanceSymbol}&interval=${interval}&limit=210`;
   const priceUrl = `https://data-api.binance.vision/api/v3/ticker/price?symbol=${binanceSymbol}`;
   const [klineRes, priceRes] = await Promise.all([fetch(klinesUrl), fetch(priceUrl)]);
   if (!klineRes.ok || !priceRes.ok) return json(res, 502, { error: "تعذر الاتصال بمزود البيانات." });
@@ -357,12 +415,12 @@ const klinesUrl = `https://data-api.binance.vision/api/v3/klines?symbol=${binanc
   return json(res, 200, { currentPrice, score, verdict, direction, indicators, pivots, levels });
 }
 
-function adminUsers(req, res) {
-  const user = authUser(req);
+async function adminUsers(req, res) {
+  const user = await authUser(req);
   if (!user || user.role !== "admin") return json(res, 403, { error: "هذه الصفحة للمدير فقط." });
-  const db = readDb();
+  const { rows } = await pool.query("SELECT * FROM users ORDER BY created_at DESC");
   return json(res, 200, {
-    users: db.users.map(u => ({
+    users: rows.map(rowToUser).map(u => ({
       id: u.id,
       name: u.name,
       email: u.email,
@@ -388,14 +446,17 @@ async function stripeWebhook(req, res) {
     const userId = session.client_reference_id || (session.metadata && session.metadata.userId);
     const plan = session.metadata && session.metadata.plan === "yearly" ? "yearly" : "monthly";
     if (userId) {
-      const db = readDb();
-      const user = db.users.find(u => u.id === userId);
+      const user = await findUserById(userId);
       if (user) {
-        user.subscribed = true;
-        user.plan = plan;
-        user.subscriptionUntil = addPlanDate(plan);
-        db.payments.push({ id: crypto.randomUUID(), userId, plan, provider: "stripe", createdAt: new Date().toISOString(), eventId: event.id });
-        writeDb(db);
+        const subscriptionUntil = addPlanDate(plan);
+        await pool.query(
+          "UPDATE users SET subscribed = true, plan = $1, subscription_until = $2 WHERE id = $3",
+          [plan, subscriptionUntil, userId]
+        );
+        await pool.query(
+          "INSERT INTO payments (id, user_id, plan, provider, event_id, created_at) VALUES ($1,$2,$3,$4,$5,$6)",
+          [crypto.randomUUID(), userId, plan, "stripe", event.id, new Date().toISOString()]
+        );
       }
     }
   }
