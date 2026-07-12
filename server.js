@@ -28,6 +28,17 @@ const pool = new Pool({
     : false
 });
 
+// مهم جدا: بدون هذا المعالج، أي انقطاع مؤقت باتصال قاعدة البيانات
+// (شي طبيعي ويصير من وقت لآخر) كان يسبب انهيار السيرفر بالكامل (Crash)
+// لأن Node.js يرمي استثناء غير معالج ويوقف العملية كلها.
+pool.on("error", (err) => {
+  console.error("خطأ غير متوقع من اتصال قاعدة البيانات الخامل:", err.message);
+});
+
+process.on("unhandledRejection", (err) => {
+  console.error("Unhandled promise rejection:", err);
+});
+
 let dbReadyPromise = ensureDb();
 
 const server = http.createServer(async (req, res) => {
