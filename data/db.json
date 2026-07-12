@@ -4,7 +4,7 @@
       "id": "2650b82d-76aa-4fcd-b06f-901e3567a024",
       "name": "YAZAN",
       "email": "yazans061@gmail.com",
-      "passwordHash": "58aaa4625ae1fc4da9a364474f6a4268:ed5f92623497acb73dea20cfbe28427f64f4d1a07005b049b1ffa6503afd91ea",
+      "passwordHash": "$2a$12$yGmjKO.4RhAUL3II8co4WuArDajSR0fk4tRUrxikWHRE0fKGjyVxm",
       "role": "admin",
       "subscribed": false,
       "plan": "",
