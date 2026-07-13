@@ -54,6 +54,10 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "POST" && url.pathname === "/api/subscribe") return subscribe(req, res);
     if (req.method === "POST" && url.pathname === "/api/analyze") return analyze(req, res);
     if (req.method === "GET" && url.pathname === "/api/admin/users") return adminUsers(req, res);
+    if (req.method === "POST" && url.pathname === "/api/admin/subscription") return adminSetSubscription(req, res);
+    if (req.method === "POST" && url.pathname === "/api/admin/keys/generate") return adminGenerateKey(req, res);
+    if (req.method === "GET" && url.pathname === "/api/admin/keys") return adminListKeys(req, res);
+    if (req.method === "POST" && url.pathname === "/api/redeem") return redeemKey(req, res);
     if (req.method === "POST" && url.pathname === "/api/stripe/webhook") return stripeWebhook(req, res);
 
     return serveStatic(url.pathname, res);
@@ -109,6 +113,16 @@ async function ensureDb() {
       provider TEXT NOT NULL,
       event_id TEXT,
       created_at TEXT NOT NULL
+    );
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS access_keys (
+      code TEXT PRIMARY KEY,
+      plan TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      used_by TEXT,
+      used_by_email TEXT,
+      used_at TEXT
     );
   `);
 }
@@ -442,6 +456,103 @@ async function adminUsers(req, res) {
       createdAt: u.createdAt
     }))
   });
+}
+
+async function adminSetSubscription(req, res) {
+  const admin = await authUser(req);
+  if (!admin || admin.role !== "admin") return json(res, 403, { error: "هذه الصفحة للمدير فقط." });
+
+  const { userId, action, plan } = await bodyJson(req);
+  if (!userId || !["activate", "deactivate"].includes(action)) {
+    return json(res, 400, { error: "بيانات غير صحيحة." });
+  }
+
+  const target = await findUserById(userId);
+  if (!target) return json(res, 404, { error: "العضو غير موجود." });
+
+  if (action === "activate") {
+    const cleanPlan = plan === "yearly" ? "yearly" : "monthly";
+    const subscriptionUntil = addPlanDate(cleanPlan);
+    await pool.query(
+      "UPDATE users SET subscribed = true, plan = $1, subscription_until = $2 WHERE id = $3",
+      [cleanPlan, subscriptionUntil, userId]
+    );
+    await pool.query(
+      "INSERT INTO payments (id, user_id, plan, provider, event_id, created_at) VALUES ($1,$2,$3,$4,$5,$6)",
+      [crypto.randomUUID(), userId, cleanPlan, "manual", null, new Date().toISOString()]
+    );
+  } else {
+    await pool.query(
+      "UPDATE users SET subscribed = false, plan = '', subscription_until = '' WHERE id = $1",
+      [userId]
+    );
+  }
+
+  const updated = await findUserById(userId);
+  return json(res, 200, { user: publicUser(updated) });
+}
+
+function generateKeyCode() {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // بدون أحرف/أرقام ملتبسة (0,O,1,I)
+  const group = () => Array.from({ length: 4 }, () => chars[crypto.randomInt(chars.length)]).join("");
+  return `ST-${group()}-${group()}-${group()}`;
+}
+
+async function adminGenerateKey(req, res) {
+  const admin = await authUser(req);
+  if (!admin || admin.role !== "admin") return json(res, 403, { error: "هذه الصفحة للمدير فقط." });
+
+  const { plan } = await bodyJson(req);
+  const cleanPlan = plan === "yearly" ? "yearly" : "monthly";
+  const code = generateKeyCode();
+  await pool.query(
+    "INSERT INTO access_keys (code, plan, created_at) VALUES ($1,$2,$3)",
+    [code, cleanPlan, new Date().toISOString()]
+  );
+  return json(res, 201, { code, plan: cleanPlan });
+}
+
+async function adminListKeys(req, res) {
+  const admin = await authUser(req);
+  if (!admin || admin.role !== "admin") return json(res, 403, { error: "هذه الصفحة للمدير فقط." });
+
+  const { rows } = await pool.query("SELECT * FROM access_keys ORDER BY created_at DESC LIMIT 200");
+  return json(res, 200, {
+    keys: rows.map(r => ({
+      code: r.code,
+      plan: r.plan,
+      createdAt: r.created_at,
+      usedByEmail: r.used_by_email,
+      usedAt: r.used_at
+    }))
+  });
+}
+
+async function redeemKey(req, res) {
+  const user = await authUser(req);
+  if (!user) return json(res, 401, { error: "سجل الدخول أولا." });
+
+  const { code } = await bodyJson(req);
+  const cleanCode = String(code || "").trim().toUpperCase();
+  if (!cleanCode) return json(res, 400, { error: "أدخل مفتاح التفعيل." });
+
+  const { rows } = await pool.query("SELECT * FROM access_keys WHERE code = $1", [cleanCode]);
+  const key = rows[0];
+  if (!key) return json(res, 404, { error: "المفتاح غير صحيح." });
+  if (key.used_by) return json(res, 409, { error: "هذا المفتاح مستخدم مسبقا." });
+
+  const subscriptionUntil = addPlanDate(key.plan);
+  await pool.query(
+    "UPDATE users SET subscribed = true, plan = $1, subscription_until = $2 WHERE id = $3",
+    [key.plan, subscriptionUntil, user.id]
+  );
+  await pool.query(
+    "UPDATE access_keys SET used_by = $1, used_by_email = $2, used_at = $3 WHERE code = $4",
+    [user.id, user.email, new Date().toISOString(), cleanCode]
+  );
+
+  const updated = await findUserById(user.id);
+  return json(res, 200, { user: publicUser(updated) });
 }
 
 async function stripeWebhook(req, res) {

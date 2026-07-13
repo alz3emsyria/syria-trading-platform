@@ -5,26 +5,157 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>لوحة الإدارة - SYRIA TRADING</title>
   <style>
-    body{margin:0;background:#090d12;color:#edf1f6;font-family:Arial,"Tahoma",sans-serif}main{max-width:1100px;margin:auto;padding:28px 18px}a{color:#f0c76f}.top{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px}.card{background:#121821;border:1px solid #2b3442;border-radius:8px;padding:18px}table{width:100%;border-collapse:collapse;margin-top:12px}th,td{padding:10px;border-bottom:1px solid #2b3442;text-align:right}th{color:#f0c76f}.ok{color:#28d79c}.bad{color:#ff5874}.mono{direction:ltr;unicode-bidi:isolate}
+    body{margin:0;background:#090d12;color:#edf1f6;font-family:Arial,"Tahoma",sans-serif}
+    main{max-width:1100px;margin:auto;padding:28px 18px}
+    a{color:#f0c76f}
+    .top{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px}
+    .card{background:#121821;border:1px solid #2b3442;border-radius:8px;padding:18px}
+    table{width:100%;border-collapse:collapse;margin-top:12px}
+    th,td{padding:10px;border-bottom:1px solid #2b3442;text-align:right;vertical-align:middle}
+    th{color:#f0c76f}
+    .ok{color:#28d79c}
+    .bad{color:#ff5874}
+    .mono{direction:ltr;unicode-bidi:isolate}
+    select,button{font:inherit;border-radius:6px;border:1px solid #2b3442;background:#18202b;color:#edf1f6;padding:6px 8px;cursor:pointer}
+    button.activate{background:#28d79c;color:#062018;border:0;font-weight:800}
+    button.deactivate{background:#ff5874;color:#210408;border:0;font-weight:800}
+    .actions{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+    .msg{min-height:20px;color:#9aa6b7;font-size:13px;margin-top:10px}
   </style>
 </head>
 <body>
   <main>
     <div class="top"><h1>لوحة الإدارة</h1><a href="/">العودة للموقع</a></div>
+
+    <div class="card" style="margin-bottom:18px">
+      <h2 style="margin:0 0 10px">توليد مفتاح تفعيل جديد</h2>
+      <div class="actions">
+        <select id="newKeyPlan">
+          <option value="monthly">شهري</option>
+          <option value="yearly">سنوي</option>
+        </select>
+        <button class="activate" id="generateKeyBtn">توليد مفتاح</button>
+      </div>
+      <div class="msg" id="keyMsg"></div>
+      <div id="newKeyBox" style="display:none;margin-top:10px;padding:12px;background:#18202b;border:1px solid #2b3442;border-radius:6px">
+        <span class="mono" id="newKeyCode" style="font-size:18px;font-weight:800;color:#f0c76f"></span>
+        <button id="copyKeyBtn" style="margin-right:10px">نسخ</button>
+      </div>
+      <table id="keysTable" style="margin-top:16px">
+        <thead><tr><th>المفتاح</th><th>الباقة</th><th>الحالة</th><th>استخدمه</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
     <div class="card">
+      <h2 style="margin:0 0 10px">الأعضاء</h2>
       <p id="status">جاري تحميل الأعضاء...</p>
+      <div class="msg" id="msg"></div>
       <table id="users" style="display:none">
-        <thead><tr><th>الاسم</th><th>البريد</th><th>الدور</th><th>الاشتراك</th><th>الباقة</th><th>ينتهي في</th></tr></thead>
+        <thead><tr><th>الاسم</th><th>البريد</th><th>الدور</th><th>الاشتراك</th><th>الباقة</th><th>ينتهي في</th><th>إجراء</th></tr></thead>
         <tbody></tbody>
       </table>
     </div>
   </main>
   <script>
-    fetch("/api/admin/users").then(async r=>{const d=await r.json();if(!r.ok)throw new Error(d.error);return d}).then(d=>{
-      status.textContent=`عدد الأعضاء: ${d.users.length}`;
-      users.style.display="table";
-      users.querySelector("tbody").innerHTML=d.users.map(u=>`<tr><td>${u.name}</td><td class="mono">${u.email}</td><td>${u.role}</td><td class="${u.subscribed?"ok":"bad"}">${u.subscribed?"فعال":"غير فعال"}</td><td>${u.plan||"-"}</td><td class="mono">${u.subscriptionUntil||"-"}</td></tr>`).join("");
-    }).catch(e=>{status.textContent=e.message});
+    const api = (url, body) => fetch(url, {
+      method: body ? "POST" : "GET",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: body ? JSON.stringify(body) : undefined
+    }).then(async r => {
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || "تعذر تنفيذ الطلب");
+      return d;
+    });
+
+    function rowHtml(u) {
+      return `<tr data-id="${u.id}">
+        <td>${u.name}</td>
+        <td class="mono">${u.email}</td>
+        <td>${u.role}</td>
+        <td class="${u.subscribed ? "ok" : "bad"}">${u.subscribed ? "فعال" : "غير فعال"}</td>
+        <td>${u.plan || "-"}</td>
+        <td class="mono">${u.subscriptionUntil ? new Date(u.subscriptionUntil).toLocaleDateString("ar") : "-"}</td>
+        <td>
+          <div class="actions">
+            <select class="planSelect">
+              <option value="monthly">شهري</option>
+              <option value="yearly">سنوي</option>
+            </select>
+            <button class="activate">تفعيل</button>
+            <button class="deactivate">إلغاء</button>
+          </div>
+        </td>
+      </tr>`;
+    }
+
+    async function load() {
+      try {
+        const d = await api("/api/admin/users");
+        status.textContent = `عدد الأعضاء: ${d.users.length}`;
+        users.style.display = "table";
+        users.querySelector("tbody").innerHTML = d.users.map(rowHtml).join("");
+        attachHandlers();
+      } catch (e) {
+        status.textContent = e.message;
+      }
+    }
+
+    function attachHandlers() {
+      document.querySelectorAll("#users tbody tr").forEach(tr => {
+        const userId = tr.dataset.id;
+        const planSelect = tr.querySelector(".planSelect");
+        tr.querySelector(".activate").onclick = () => setSubscription(userId, "activate", planSelect.value);
+        tr.querySelector(".deactivate").onclick = () => setSubscription(userId, "deactivate");
+      });
+    }
+
+    async function setSubscription(userId, action, plan) {
+      msg.textContent = "جاري التنفيذ...";
+      try {
+        await api("/api/admin/subscription", { userId, action, plan });
+        msg.textContent = action === "activate" ? "تم تفعيل الاشتراك بنجاح." : "تم إلغاء تفعيل الاشتراك.";
+        await load();
+      } catch (e) {
+        msg.textContent = e.message;
+      }
+    }
+
+    async function loadKeys() {
+      try {
+        const d = await api("/api/admin/keys");
+        keysTable.querySelector("tbody").innerHTML = d.keys.map(k => `<tr>
+          <td class="mono">${k.code}</td>
+          <td>${k.plan === "yearly" ? "سنوي" : "شهري"}</td>
+          <td class="${k.usedByEmail ? "bad" : "ok"}">${k.usedByEmail ? "مستخدم" : "متاح"}</td>
+          <td class="mono">${k.usedByEmail || "-"}</td>
+        </tr>`).join("");
+      } catch (e) {
+        keyMsg.textContent = e.message;
+      }
+    }
+
+    generateKeyBtn.onclick = async () => {
+      keyMsg.textContent = "جاري التوليد...";
+      try {
+        const d = await api("/api/admin/keys/generate", { plan: newKeyPlan.value });
+        newKeyCode.textContent = d.code;
+        newKeyBox.style.display = "block";
+        keyMsg.textContent = "تم توليد المفتاح. انسخه وأرسله للمشترك.";
+        await loadKeys();
+      } catch (e) {
+        keyMsg.textContent = e.message;
+      }
+    };
+
+    copyKeyBtn.onclick = () => {
+      navigator.clipboard.writeText(newKeyCode.textContent);
+      keyMsg.textContent = "تم النسخ.";
+    };
+
+    load();
+    loadKeys();
   </script>
 </body>
 </html>
