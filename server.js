@@ -387,7 +387,7 @@ async function analyze(req, res) {
   ]);
   if (!marketData) return json(res, 502, { error: "تعذر الاتصال بمزود البيانات أو الرمز غير مدعوم حاليا." });
 
-  const { closes, highs, lows, volumes, currentPrice } = marketData;
+  const { times, opens, closes, highs, lows, volumes, currentPrice } = marketData;
 
   const ema20 = ema(closes, 20);
   const ema50 = ema(closes, 50);
@@ -444,6 +444,20 @@ async function analyze(req, res) {
     signals.push({ name: "مؤشر الخوف والطمع", value: fngSignal });
   }
 
+  const smc = analyzeSmartMoney(opens, highs, lows, closes, times, currentPrice);
+  if (smc.trend !== "neutral") {
+    signals.push({ name: "هيكل السوق SMC", value: smc.trend === "bullish" ? 1 : -1 });
+  }
+  if (smc.bos) {
+    signals.push({ name: `كسر هيكل ${smc.bos.type === "bullish" ? "صاعد" : "هابط"} (BOS)`, value: smc.bos.type === "bullish" ? 1 : -1 });
+  }
+  if (smc.nearFvg) {
+    signals.push({ name: "داخل فجوة سيولة FVG", value: smc.nearFvg.type === "bullish" ? 1 : -1 });
+  }
+  if (smc.nearOrderBlock) {
+    signals.push({ name: "عند Order Block", value: smc.nearOrderBlock.type === "bullish" ? 1 : -1 });
+  }
+
   const score = signals.reduce((s, x) => s + x.value, 0);
   const maxPossible = signals.length;
   const confidencePct = maxPossible > 0 ? Math.round((Math.abs(score) / maxPossible) * 100) : 0;
@@ -480,9 +494,16 @@ async function analyze(req, res) {
     };
   }
 
+  const chartLen = 150;
+  const chartStart = Math.max(0, closes.length - chartLen);
+  const candles = [];
+  for (let i = chartStart; i < closes.length; i++) {
+    candles.push({ time: times[i], open: opens[i], high: highs[i], low: lows[i], close: closes[i] });
+  }
+
   return json(res, 200, {
     currentPrice, score, confidencePct, confidenceLabel, verdict, direction,
-    indicators, pivots, levels, signals, htfTrend, fearGreed
+    indicators, pivots, levels, signals, htfTrend, fearGreed, smc, candles
   });
 }
 
@@ -744,12 +765,114 @@ function stochasticRsi(rsiArr, period = 14) {
 
 const YAHOO_HEADERS = { "User-Agent": "Mozilla/5.0 (compatible; SyriaTradingBot/1.0)" };
 
+// ===== Smart Money Concepts (ICT/SMC) =====
+
+function detectSwingPoints(highs, lows, lookback = 3) {
+  const swingHighs = [];
+  const swingLows = [];
+  for (let i = lookback; i < highs.length - lookback; i++) {
+    const leftH = highs.slice(i - lookback, i);
+    const rightH = highs.slice(i + 1, i + 1 + lookback);
+    if (leftH.every(h => h <= highs[i]) && rightH.every(h => h <= highs[i])) {
+      swingHighs.push({ index: i, price: highs[i] });
+    }
+    const leftL = lows.slice(i - lookback, i);
+    const rightL = lows.slice(i + 1, i + 1 + lookback);
+    if (leftL.every(l => l >= lows[i]) && rightL.every(l => l >= lows[i])) {
+      swingLows.push({ index: i, price: lows[i] });
+    }
+  }
+  return { swingHighs, swingLows };
+}
+
+function detectMarketStructure(swingHighs, swingLows) {
+  if (swingHighs.length < 2 || swingLows.length < 2) return { trend: "neutral", lastSwingHigh: null, lastSwingLow: null };
+  const [h1, h2] = swingHighs.slice(-2);
+  const [l1, l2] = swingLows.slice(-2);
+  let trend = "neutral";
+  if (h2.price > h1.price && l2.price > l1.price) trend = "bullish";
+  else if (h2.price < h1.price && l2.price < l1.price) trend = "bearish";
+  return { trend, lastSwingHigh: h2, lastSwingLow: l2 };
+}
+
+function detectBOS(closes, times, structure) {
+  const last = closes.length - 1;
+  if (!structure.lastSwingHigh || !structure.lastSwingLow) return null;
+  if (closes[last] > structure.lastSwingHigh.price) {
+    return { type: "bullish", price: structure.lastSwingHigh.price, time: times[last] };
+  }
+  if (closes[last] < structure.lastSwingLow.price) {
+    return { type: "bearish", price: structure.lastSwingLow.price, time: times[last] };
+  }
+  return null;
+}
+
+function detectFairValueGaps(highs, lows, times, lookback = 60) {
+  const fvgs = [];
+  const start = Math.max(2, highs.length - lookback);
+  for (let i = start; i < highs.length; i++) {
+    if (highs[i - 2] < lows[i]) fvgs.push({ type: "bullish", top: lows[i], bottom: highs[i - 2], time: times[i - 1] });
+    if (lows[i - 2] > highs[i]) fvgs.push({ type: "bearish", top: lows[i - 2], bottom: highs[i], time: times[i - 1] });
+  }
+  return fvgs.slice(-6);
+}
+
+function detectOrderBlocks(opens, closes, times, lookback = 60) {
+  const blocks = [];
+  const start = Math.max(1, closes.length - lookback);
+  const recentCloses = closes.slice(-30);
+  const avgMove = recentCloses.reduce((s, c, idx, arr) => (idx > 0 ? s + Math.abs(arr[idx] - arr[idx - 1]) : s), 0) / Math.max(1, recentCloses.length - 1);
+  for (let i = start; i < closes.length - 1; i++) {
+    const bodyNext = Math.abs(closes[i + 1] - opens[i + 1]);
+    const isImpulsive = bodyNext > avgMove * 1.5;
+    const currentBearish = closes[i] < opens[i];
+    const currentBullish = closes[i] > opens[i];
+    if (isImpulsive && closes[i + 1] > opens[i + 1] && currentBearish) {
+      blocks.push({ type: "bullish", top: opens[i], bottom: closes[i], time: times[i] });
+    }
+    if (isImpulsive && closes[i + 1] < opens[i + 1] && currentBullish) {
+      blocks.push({ type: "bearish", top: closes[i], bottom: opens[i], time: times[i] });
+    }
+  }
+  return blocks.slice(-4);
+}
+
+function detectLiquidityPools(highs, lows, lookback = 60, tolerance = 0.0015) {
+  const start = Math.max(0, highs.length - lookback);
+  const pools = [];
+  for (let i = start; i < highs.length; i++) {
+    for (let j = i + 1; j < highs.length; j++) {
+      if (Math.abs(highs[i] - highs[j]) / highs[i] < tolerance) {
+        pools.push({ type: "sellside", price: (highs[i] + highs[j]) / 2 });
+      }
+      if (Math.abs(lows[i] - lows[j]) / lows[i] < tolerance) {
+        pools.push({ type: "buyside", price: (lows[i] + lows[j]) / 2 });
+      }
+    }
+  }
+  return pools.slice(-6);
+}
+
+function analyzeSmartMoney(opens, highs, lows, closes, times, currentPrice) {
+  const { swingHighs, swingLows } = detectSwingPoints(highs, lows, 3);
+  const structure = detectMarketStructure(swingHighs, swingLows);
+  const bos = detectBOS(closes, times, structure);
+  const fvgs = detectFairValueGaps(highs, lows, times);
+  const orderBlocks = detectOrderBlocks(opens, closes, times);
+  const liquidity = detectLiquidityPools(highs, lows);
+  const nearFvg = fvgs.find(f => currentPrice <= f.top * 1.01 && currentPrice >= f.bottom * 0.99) || null;
+  const nearOrderBlock = orderBlocks.find(o => currentPrice <= o.top * 1.01 && currentPrice >= o.bottom * 0.99) || null;
+  return { trend: structure.trend, bos, fvgs, orderBlocks, liquidity, nearFvg, nearOrderBlock };
+}
+
 function aggregateCandles(rows, groupSize) {
   const out = [];
   for (let i = 0; i < rows.length; i += groupSize) {
     const chunk = rows.slice(i, i + groupSize);
     if (!chunk.length) continue;
     out.push({
+      time: chunk[0].time,
+      open: chunk[0].open,
       close: chunk[chunk.length - 1].close,
       high: Math.max(...chunk.map(c => c.high)),
       low: Math.min(...chunk.map(c => c.low)),
@@ -769,9 +892,11 @@ async function fetchBinanceKlines(symbol, interval, limit = 210) {
   const priceData = await priceRes.json();
   if (!Array.isArray(klines) || klines.length < 60) return null;
   return {
-    closes: klines.map(k => Number(k[4])),
+    times: klines.map(k => Math.floor(Number(k[0]) / 1000)),
+    opens: klines.map(k => Number(k[1])),
     highs: klines.map(k => Number(k[2])),
     lows: klines.map(k => Number(k[3])),
+    closes: klines.map(k => Number(k[4])),
     volumes: klines.map(k => Number(k[5])),
     currentPrice: Number(priceData.price)
   };
@@ -798,8 +923,8 @@ async function fetchYahooKlines(symbol, interval) {
   const ts = result.timestamp;
   const q = result.indicators.quote[0];
   let rows = ts
-    .map((t, i) => ({ close: q.close[i], high: q.high[i], low: q.low[i], volume: q.volume[i] }))
-    .filter(r => r.close != null && r.high != null && r.low != null);
+    .map((t, i) => ({ time: t, open: q.open[i], close: q.close[i], high: q.high[i], low: q.low[i], volume: q.volume[i] }))
+    .filter(r => r.close != null && r.high != null && r.low != null && r.open != null);
   if (interval === "4h") rows = aggregateCandles(rows, 4);
   rows = rows.slice(-210);
   if (rows.length < 60) return null;
@@ -807,6 +932,8 @@ async function fetchYahooKlines(symbol, interval) {
     ? Number(result.meta.regularMarketPrice)
     : rows[rows.length - 1].close;
   return {
+    times: rows.map(r => r.time),
+    opens: rows.map(r => r.open),
     closes: rows.map(r => r.close),
     highs: rows.map(r => r.high),
     lows: rows.map(r => r.low),

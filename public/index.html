@@ -20,8 +20,8 @@
     header{position:sticky;top:0;z-index:5;background:rgba(9,13,18,.9);backdrop-filter:blur(12px);border-bottom:1px solid var(--line)}.top{max-width:1240px;margin:auto;padding:13px 20px;display:flex;justify-content:space-between;align-items:center;gap:14px}.nav{display:flex;gap:18px;align-items:center;color:var(--muted);font-size:14px}.nav a{text-decoration:none}.member{color:var(--gold2);font-weight:800}
     main{max-width:1240px;margin:auto;padding:28px 20px 70px}.hero{display:grid;grid-template-columns:1.05fr .95fr;gap:24px;align-items:center;margin:18px 0 28px}.hero h1{font-size:clamp(30px,5vw,54px);line-height:1.18}.hero p{color:var(--muted);font-size:16px;max-width:620px}.visual{min-height:260px;border:1px solid var(--line);border-radius:8px;background:linear-gradient(150deg,#151c26,#0e141c);display:grid;place-items:center;overflow:hidden}.visual svg{width:92%;height:220px}
     .panel,.card{background:var(--panel);border:1px solid var(--line);border-radius:8px}.panel{padding:18px}.grid{display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:12px;align-items:end}.field label{display:block;color:var(--muted);font-size:13px;font-weight:700}.ticker{height:46px;border-top:1px solid var(--line)}
-    #results{margin-top:20px}.chart{height:520px}.chart-head{display:flex;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--line)}.cards{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px}.card{padding:18px}.card.full{grid-column:1/-1}.sub{color:var(--muted);font-size:13px;margin-top:4px}.level{display:flex;justify-content:space-between;border-bottom:1px solid var(--line);padding:10px 0}.level:last-child{border-bottom:0}.ok{color:var(--green)}.bad{color:var(--red)}.note{background:#1b2430;border:1px solid var(--line);border-radius:8px;padding:14px;color:var(--muted)}.indicator{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:12px}.mini{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:10px}.mini span{display:block;color:var(--muted);font-size:12px}.mini b{font-family:"JetBrains Mono";direction:ltr}.loader{color:var(--muted);padding:16px}
-    @media(max-width:860px){.hero,.grid,.cards{grid-template-columns:1fr}.nav{flex-wrap:wrap;justify-content:flex-end}.chart{height:430px}.indicator{grid-template-columns:1fr 1fr}}
+    #results{margin-top:20px}.chart{height:720px;position:relative}.chart-head{display:flex;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--line)}.cards{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px}.card{padding:18px}.card.full{grid-column:1/-1}.sub{color:var(--muted);font-size:13px;margin-top:4px}.level{display:flex;justify-content:space-between;border-bottom:1px solid var(--line);padding:10px 0}.level:last-child{border-bottom:0}.ok{color:var(--green)}.bad{color:var(--red)}.note{background:#1b2430;border:1px solid var(--line);border-radius:8px;padding:14px;color:var(--muted)}.indicator{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:12px}.mini{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:10px}.mini span{display:block;color:var(--muted);font-size:12px}.mini b{font-family:"JetBrains Mono";direction:ltr}.loader{color:var(--muted);padding:16px}.smcLine{display:flex;justify-content:space-between;padding:6px 0;font-size:13px;color:var(--muted)}.smcLine b{color:var(--text)}
+    @media(max-width:860px){.hero,.grid,.cards{grid-template-columns:1fr}.nav{flex-wrap:wrap;justify-content:flex-end}.chart{height:480px}.indicator{grid-template-columns:1fr 1fr}}
   </style>
 </head>
 <body>
@@ -104,16 +104,20 @@
     <section id="results" class="hidden">
       <div class="panel">
         <div class="chart-head"><span class="mono" id="chartSym">-</span><span id="chartTf">-</span></div>
-        <div class="chart tradingview-widget-container" id="chartBox"></div>
+        <div class="chart">
+          <div id="liveChart" style="width:100%;height:100%"></div>
+          <div id="tvFallback" class="tradingview-widget-container hidden" style="width:100%;height:100%"></div>
+        </div>
       </div>
       <div class="cards">
-        <div class="card"><h3>قرار الدخول</h3><div class="sub">محسوب من بيانات Binance للعملات الرقمية</div><div id="decision"></div></div>
-        <div class="card"><h3>الدخول والأهداف</h3><div class="sub">وقف وأهداف مبنية على ATR</div><div id="levels"></div></div>
+        <div class="card"><h3>قرار الدخول</h3><div class="sub">تحليل فني موزون + Smart Money Concepts</div><div id="decision"></div></div>
+        <div class="card"><h3>الدخول والأهداف</h3><div class="sub">وقف وأهداف مبنية على ATR، مرسومة مباشرة على الشارت</div><div id="levels"></div></div>
         <div class="card full"><h3>مؤشرات TradingView الرسمية</h3><div class="sub">ملخص فني مضمن لنفس الرمز والفريم</div><div id="taBox" style="min-height:430px"></div></div>
       </div>
     </section>
   </main>
 
+  <script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
   <script>
     const MARKETS={crypto:{label:"العملات الرقمية",symbols:[["BINANCE:BTCUSDT","بيتكوين BTC/USDT","BTCUSDT"],["BINANCE:ETHUSDT","إيثريوم ETH/USDT","ETHUSDT"],["BINANCE:BNBUSDT","BNB/USDT","BNBUSDT"],["BINANCE:SOLUSDT","سولانا SOL/USDT","SOLUSDT"],["BINANCE:XRPUSDT","ريبل XRP/USDT","XRPUSDT"],["BINANCE:ADAUSDT","كاردانو ADA/USDT","ADAUSDT"],["BINANCE:DOGEUSDT","DOGE/USDT","DOGEUSDT"],["BINANCE:LINKUSDT","LINK/USDT","LINKUSDT"]]},forex:{label:"فوركس",symbols:[["FX:EURUSD","EUR/USD"],["FX:GBPUSD","GBP/USD"],["FX:USDJPY","USD/JPY"],["FX:AUDUSD","AUD/USD"]]},metals:{label:"المعادن",symbols:[["OANDA:XAUUSD","الذهب XAU/USD","PAXGUSDT"],["OANDA:XAGUSD","الفضة XAG/USD"]]},indices:{label:"المؤشرات والنفط",symbols:[["SP:SPX","S&amp;P 500"],["NASDAQ:NDX","Nasdaq 100","^NDX","yahoo"],["TVC:DXY","DXY"],["TVC:USOIL","WTI Oil"]]}};
     const TFS=[["1 دقيقة","1","1m","1m"],["5 دقائق","5","5m","5m"],["15 دقيقة","15","15m","15m"],["30 دقيقة","30","30m","30m"],["1 ساعة","60","1h","1h"],["4 ساعات","240","4h","4h"],["يومي","D","1D","1d"],["أسبوعي","W","1W","1w"]];
@@ -135,17 +139,58 @@
     function populate(k){symbolSelect.innerHTML=MARKETS[k].symbols.map(s=>`<option value="${s[0]}">${s[1]}</option>`).join("")}
     marketSelect.onchange=e=>populate(e.target.value);
     function tvScript(box,src,cfg){box.innerHTML='<div class="tradingview-widget-container__widget"></div>';const s=document.createElement("script");s.src=src;s.async=true;s.innerHTML=JSON.stringify(cfg);box.appendChild(s)}
-    function renderTv(symbol,tf){tvScript($("chartBox"),"https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js",{autosize:true,symbol,interval:tf[1],timezone:"exchange",theme:"dark",style:"1",locale:"ar",studies:["STD;RSI","STD;MACD"],support_host:"https://www.tradingview.com"});tvScript($("taBox"),"https://s3.tradingview.com/external-embedding/embed-widget-technical-analysis.js",{interval:tf[2],width:"100%",height:430,isTransparent:true,symbol,showIntervalTabs:true,locale:"ar",colorTheme:"dark"})}
+    function renderSummary(symbol,tf){tvScript($("taBox"),"https://s3.tradingview.com/external-embedding/embed-widget-technical-analysis.js",{interval:tf[2],width:"100%",height:430,isTransparent:true,symbol,showIntervalTabs:true,locale:"ar",colorTheme:"dark"})}
+    function renderFallbackChart(symbol,tf){$("liveChart").classList.add("hidden");$("tvFallback").classList.remove("hidden");tvScript($("tvFallback"),"https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js",{autosize:true,symbol,interval:tf[1],timezone:"exchange",theme:"dark",style:"1",locale:"ar",studies:["STD;RSI","STD;MACD"],support_host:"https://www.tradingview.com"})}
+
+    let liveChart=null, candleSeries=null, chartPriceLines=[];
+    function ensureLiveChart(){
+      $("tvFallback").classList.add("hidden");$("liveChart").classList.remove("hidden");
+      if(liveChart) return;
+      liveChart=LightweightCharts.createChart($("liveChart"),{
+        layout:{background:{color:"transparent"},textColor:"#9aa6b7"},
+        grid:{vertLines:{color:"#1b2430"},horzLines:{color:"#1b2430"}},
+        rightPriceScale:{borderColor:"#2b3442"},
+        timeScale:{borderColor:"#2b3442",timeVisible:true,secondsVisible:false},
+        crosshair:{mode:LightweightCharts.CrosshairMode.Normal}
+      });
+      candleSeries=liveChart.addCandlestickSeries({upColor:"#28d79c",downColor:"#ff5874",borderVisible:false,wickUpColor:"#28d79c",wickDownColor:"#ff5874"});
+      new ResizeObserver(()=>liveChart.applyOptions({width:$("liveChart").clientWidth,height:$("liveChart").clientHeight})).observe($("liveChart"));
+    }
+    function clearChartLines(){chartPriceLines.forEach(l=>candleSeries.removePriceLine(l));chartPriceLines=[]}
+    function addChartLine(price,color,title,style){if(price==null)return;const line=candleSeries.createPriceLine({price,color,lineWidth:2,lineStyle:style??LightweightCharts.LineStyle.Solid,axisLabelVisible:true,title});chartPriceLines.push(line)}
+    function renderLiveChart(d){
+      ensureLiveChart();
+      candleSeries.setData(d.candles);
+      clearChartLines();
+      if(d.levels){
+        addChartLine(d.levels.entry,"#f0c76f","دخول");
+        addChartLine(d.levels.stopLoss,"#ff5874","وقف",LightweightCharts.LineStyle.Dashed);
+        addChartLine(d.levels.takeProfit1,"#28d79c","هدف 1",LightweightCharts.LineStyle.Dashed);
+        addChartLine(d.levels.takeProfit2,"#28d79c","هدف 2",LightweightCharts.LineStyle.Dotted);
+        addChartLine(d.levels.takeProfit3,"#28d79c","هدف 3",LightweightCharts.LineStyle.Dotted);
+      }
+      if(d.smc.nearOrderBlock){addChartLine(d.smc.nearOrderBlock.top,"#9b8cff","OB أعلى",LightweightCharts.LineStyle.Dotted);addChartLine(d.smc.nearOrderBlock.bottom,"#9b8cff","OB أسفل",LightweightCharts.LineStyle.Dotted)}
+      if(d.smc.nearFvg){addChartLine(d.smc.nearFvg.top,"#4fb3d7","FVG أعلى",LightweightCharts.LineStyle.Dotted);addChartLine(d.smc.nearFvg.bottom,"#4fb3d7","FVG أسفل",LightweightCharts.LineStyle.Dotted)}
+      const markers=[];
+      if(d.smc.bos)markers.push({time:d.smc.bos.time,position:d.smc.bos.type==="bullish"?"belowBar":"aboveBar",color:d.smc.bos.type==="bullish"?"#28d79c":"#ff5874",shape:d.smc.bos.type==="bullish"?"arrowUp":"arrowDown",text:"BOS"});
+      candleSeries.setMarkers(markers);
+      liveChart.timeScale().fitContent();
+    }
     const fp=n=>Number(n).toLocaleString("en-US",{maximumFractionDigits:n<1?6:n<100?4:2});
     function renderAnalysis(d){const color=d.direction==="buy"?"ok":d.direction==="sell"?"bad":"";
       const fngRow=d.fearGreed?`<div class="mini"><span>الخوف والطمع</span><b>${d.fearGreed.value} (${d.fearGreed.classification})</b></div>`:"";
       const htfRow=d.htfTrend?`<div class="mini"><span>اتجاه ${d.htfTrend.timeframe}</span><b class="${d.htfTrend.bullish?"ok":"bad"}">${d.htfTrend.bullish?"صاعد":"هابط"}</b></div>`:"";
       const stochRow=d.indicators.stochRsi!=null?`<div class="mini"><span>Stoch RSI</span><b>${d.indicators.stochRsi.toFixed(1)}</b></div>`:"";
       const bbRow=d.indicators.bbUpper!=null?`<div class="mini"><span>Bollinger</span><b class="mono">${fp(d.indicators.bbLower)} - ${fp(d.indicators.bbUpper)}</b></div>`:"";
-      $("decision").innerHTML=`<div class="note"><h2 class="${color}">${d.verdict}</h2><p>قوة الإشارة: <b class="mono">${d.confidencePct}%</b> (${d.signals.length} مؤشرات مجتمعة)</p></div><div class="indicator"><div class="mini"><span>RSI</span><b>${d.indicators.rsi.toFixed(1)}</b></div>${stochRow}<div class="mini"><span>ATR</span><b>${fp(d.indicators.atr)}</b></div><div class="mini"><span>EMA20</span><b>${fp(d.indicators.ema20)}</b></div><div class="mini"><span>EMA50</span><b>${fp(d.indicators.ema50)}</b></div>${bbRow}${htfRow}${fngRow}</div>`;
-      if(!d.levels){$("levels").innerHTML='<div class="note">لا توجد صفقة واضحة حاليا. انتظر توافقا أقوى بين المؤشرات.</div>';return}
-      $("levels").innerHTML=[["الدخول",d.levels.entry],["وقف الخسارة",d.levels.stopLoss],["الهدف الأول",d.levels.takeProfit1],["الهدف الثاني",d.levels.takeProfit2],["الهدف الثالث",d.levels.takeProfit3],["Pivot",d.pivots.pivot],["أعلى سعر حديث",d.pivots.swingHigh],["أدنى سعر حديث",d.pivots.swingLow]].map(x=>`<div class="level"><span>${x[0]}</span><b class="mono">${fp(x[1])}</b></div>`).join("")}
-    $("analyzeBtn").onclick=async()=>{const market=marketSelect.value,tf=TFS[Number(timeframeSelect.value)],sym=symbolSelect.value,meta=MARKETS[market].symbols.find(s=>s[0]===sym);$("results").classList.remove("hidden");$("chartSym").textContent=sym;$("chartTf").textContent=tf[0];renderTv(sym,tf);$("decision").innerHTML='<div class="loader">جاري التحليل...</div>';$("levels").innerHTML='<div class="loader">جاري حساب المستويات...</div>'; if(!meta[2]){$("decision").innerHTML='<div class="note">لهذه الأداة استخدم ملخص TradingView بالأسفل، لأن بيانات الدخول الدقيقة غير متاحة حاليا لهذا الرمز.</div>';$("levels").innerHTML='<div class="note">ضع الوقف خلف آخر قمة أو قاع واضح، واختر أهدافا لا تقل عن نسبة 1:2.</div>';return} try{const d=await api("/api/analyze",{symbol:meta[2],provider:meta[3]||"binance",interval:tf[3]});renderAnalysis(d)}catch(e){$("decision").innerHTML=`<div class="note bad">${e.message}</div>`;$("levels").innerHTML='<div class="note">تحقق من اتصال الخادم بالإنترنت أو جرب أداة أخرى.</div>'}};
+      const trendAr={bullish:"صاعد",bearish:"هابط",neutral:"محايد"}[d.smc.trend];
+      const smcLines=[`<div class="smcLine"><span>هيكل السوق (SMC)</span><b class="${d.smc.trend==="bullish"?"ok":d.smc.trend==="bearish"?"bad":""}">${trendAr}</b></div>`];
+      if(d.smc.bos)smcLines.push(`<div class="smcLine"><span>آخر كسر هيكل (BOS)</span><b class="${d.smc.bos.type==="bullish"?"ok":"bad"}">${d.smc.bos.type==="bullish"?"صاعد":"هابط"} عند ${fp(d.smc.bos.price)}</b></div>`);
+      if(d.smc.nearOrderBlock)smcLines.push(`<div class="smcLine"><span>داخل Order Block</span><b class="${d.smc.nearOrderBlock.type==="bullish"?"ok":"bad"}">${d.smc.nearOrderBlock.type==="bullish"?"طلب (شراء)":"عرض (بيع)"}</b></div>`);
+      if(d.smc.nearFvg)smcLines.push(`<div class="smcLine"><span>داخل فجوة سيولة FVG</span><b class="${d.smc.nearFvg.type==="bullish"?"ok":"bad"}">${d.smc.nearFvg.type==="bullish"?"صاعدة":"هابطة"}</b></div>`);
+      $("decision").innerHTML=`<div class="note"><h2 class="${color}">${d.verdict}</h2><p>قوة الإشارة: <b class="mono">${d.confidencePct}%</b> (${d.signals.length} مؤشرات مجتمعة)</p></div><div class="indicator"><div class="mini"><span>RSI</span><b>${d.indicators.rsi.toFixed(1)}</b></div>${stochRow}<div class="mini"><span>ATR</span><b>${fp(d.indicators.atr)}</b></div><div class="mini"><span>EMA20</span><b>${fp(d.indicators.ema20)}</b></div><div class="mini"><span>EMA50</span><b>${fp(d.indicators.ema50)}</b></div>${bbRow}${htfRow}${fngRow}</div><div style="margin-top:14px;border-top:1px solid var(--line);padding-top:8px">${smcLines.join("")}</div>`;
+      if(!d.levels){$("levels").innerHTML='<div class="note">لا توجد صفقة واضحة حاليا. انتظر توافقا أقوى بين المؤشرات. المستويات مرسومة على الشارت أعلاه.</div>';return}
+      $("levels").innerHTML=[["الدخول",d.levels.entry],["وقف الخسارة",d.levels.stopLoss],["الهدف الأول",d.levels.takeProfit1],["الهدف الثاني",d.levels.takeProfit2],["الهدف الثالث",d.levels.takeProfit3],["Pivot",d.pivots.pivot],["أعلى سعر حديث",d.pivots.swingHigh],["أدنى سعر حديث",d.pivots.swingLow]].map(x=>`<div class="level"><span>${x[0]}</span><b class="mono">${fp(x[1])}</b></div>`).join("")+'<p class="sub" style="margin-top:10px">كل هذه المستويات مرسومة مباشرة كخطوط على الشارت أعلاه.</p>'}
+    $("analyzeBtn").onclick=async()=>{const market=marketSelect.value,tf=TFS[Number(timeframeSelect.value)],sym=symbolSelect.value,meta=MARKETS[market].symbols.find(s=>s[0]===sym);$("results").classList.remove("hidden");$("chartSym").textContent=sym;$("chartTf").textContent=tf[0];renderSummary(sym,tf);$("decision").innerHTML='<div class="loader">جاري التحليل...</div>';$("levels").innerHTML='<div class="loader">جاري حساب المستويات...</div>'; if(!meta[2]){renderFallbackChart(sym,tf);$("decision").innerHTML='<div class="note">لهذه الأداة استخدم ملخص TradingView بالأسفل، لأن بيانات الدخول الدقيقة غير متاحة حاليا لهذا الرمز.</div>';$("levels").innerHTML='<div class="note">ضع الوقف خلف آخر قمة أو قاع واضح، واختر أهدافا لا تقل عن نسبة 1:2.</div>';return} try{const d=await api("/api/analyze",{symbol:meta[2],provider:meta[3]||"binance",interval:tf[3]});renderLiveChart(d);renderAnalysis(d)}catch(e){$("decision").innerHTML=`<div class="note bad">${e.message}</div>`;$("levels").innerHTML='<div class="note">تحقق من اتصال الخادم بالإنترنت أو جرب أداة أخرى.</div>'}};
     tvScript($("tickerTape"),"https://s3.tradingview.com/external-embedding/embed-widget-ticker-tape.js",{symbols:[{proName:"BINANCE:BTCUSDT",title:"BTC"},{proName:"BINANCE:ETHUSDT",title:"ETH"},{proName:"FX:EURUSD",title:"EUR/USD"},{proName:"OANDA:XAUUSD",title:"GOLD"},{proName:"TVC:DXY",title:"DXY"}],showSymbolLogo:true,isTransparent:true,displayMode:"adaptive",colorTheme:"dark",locale:"ar"});
     fill(); boot();
   </script>
