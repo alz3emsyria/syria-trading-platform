@@ -373,28 +373,30 @@ async function analyze(req, res) {
   if (!user) return json(res, 401, { error: "سجل الدخول أولا." });
   if (!user.subscribed && user.role !== "admin") return json(res, 403, { error: "هذه الميزة للأعضاء المشتركين فقط." });
 
-  const { binanceSymbol, interval } = await bodyJson(req);
-  if (!/^[A-Z0-9]{5,20}$/.test(String(binanceSymbol || ""))) return json(res, 400, { error: "رمز العملة غير صحيح." });
+  const { symbol, interval, provider } = await bodyJson(req);
+  const cleanProvider = provider === "yahoo" ? "yahoo" : "binance";
+  const symbolPattern = cleanProvider === "yahoo" ? /^[A-Z0-9^.=\-]{1,20}$/i : /^[A-Z0-9]{5,20}$/;
+  if (!symbolPattern.test(String(symbol || ""))) return json(res, 400, { error: "رمز الأداة غير صحيح." });
   if (!/^(1m|5m|15m|30m|1h|4h|1d|1w)$/.test(String(interval || ""))) return json(res, 400, { error: "الفريم غير صحيح." });
 
-  const klinesUrl = `https://data-api.binance.vision/api/v3/klines?symbol=${binanceSymbol}&interval=${interval}&limit=210`;
-  const priceUrl = `https://data-api.binance.vision/api/v3/ticker/price?symbol=${binanceSymbol}`;
-  const [klineRes, priceRes] = await Promise.all([fetch(klinesUrl), fetch(priceUrl)]);
-  if (!klineRes.ok || !priceRes.ok) return json(res, 502, { error: "تعذر الاتصال بمزود البيانات." });
+  const isRealCrypto = cleanProvider === "binance" && symbol !== "PAXGUSDT";
+  const [marketData, htfResult, fngResult] = await Promise.all([
+    fetchMarketData(symbol, interval, cleanProvider),
+    fetchHigherTimeframeTrend(symbol, interval, cleanProvider),
+    isRealCrypto ? fetchFearGreedIndex() : Promise.resolve(null)
+  ]);
+  if (!marketData) return json(res, 502, { error: "تعذر الاتصال بمزود البيانات أو الرمز غير مدعوم حاليا." });
 
-  const klines = await klineRes.json();
-  const priceData = await priceRes.json();
-  if (!Array.isArray(klines) || klines.length < 60) return json(res, 422, { error: "البيانات غير كافية للتحليل." });
+  const { closes, highs, lows, volumes, currentPrice } = marketData;
 
-  const closes = klines.map(k => Number(k[4]));
-  const highs = klines.map(k => Number(k[2]));
-  const lows = klines.map(k => Number(k[3]));
-  const currentPrice = Number(priceData.price);
   const ema20 = ema(closes, 20);
   const ema50 = ema(closes, 50);
   const rsiArr = rsi(closes, 14);
   const macdData = macd(closes);
   const atrArr = atr(highs, lows, closes, 14);
+  const bb = bollinger(closes, 20, 2);
+  const stochRsiArr = stochasticRsi(rsiArr, 14);
+  const volAvg = sma(volumes, 20);
   const last = closes.length - 1;
 
   const indicators = {
@@ -403,25 +405,66 @@ async function analyze(req, res) {
     rsi: rsiArr[last],
     macd: macdData.line[last],
     macdSignal: macdData.signal[last],
-    atr: atrArr[last]
+    atr: atrArr[last],
+    bbUpper: bb.upper[last],
+    bbMid: bb.mid[last],
+    bbLower: bb.lower[last],
+    stochRsi: stochRsiArr[last],
+    volume: volumes[last],
+    volumeAvg: volAvg[last]
   };
 
-  let score = 0;
-  score += indicators.ema20 > indicators.ema50 ? 1 : -1;
-  score += currentPrice > indicators.ema20 ? 1 : -1;
-  score += indicators.macd > indicators.macdSignal ? 1 : -1;
-  score += indicators.rsi > 50 ? 1 : -1;
+  // نظام تقييم موزون: كل مؤشر يصوت بشكل مستقل، والاتجاه النهائي هو محصلة الأصوات
+  const signals = [];
+  signals.push({ name: "اتجاه EMA20/EMA50", value: indicators.ema20 > indicators.ema50 ? 1 : -1 });
+  signals.push({ name: "السعر مقابل EMA20", value: currentPrice > indicators.ema20 ? 1 : -1 });
+  signals.push({ name: "MACD", value: indicators.macd > indicators.macdSignal ? 1 : -1 });
+  signals.push({ name: "RSI", value: indicators.rsi > 50 ? 1 : -1 });
+  if (indicators.stochRsi !== null) {
+    signals.push({ name: "Stochastic RSI", value: indicators.stochRsi < 20 ? 1 : indicators.stochRsi > 80 ? -1 : 0 });
+  }
+  if (indicators.bbUpper !== null) {
+    signals.push({ name: "نطاقات Bollinger", value: currentPrice > indicators.bbUpper ? 1 : currentPrice < indicators.bbLower ? -1 : 0 });
+  }
+  if (indicators.volumeAvg !== null) {
+    const priceUp = currentPrice > closes[last - 1];
+    const volumeConfirms = indicators.volume > indicators.volumeAvg * 1.2;
+    signals.push({ name: "تأكيد الحجم", value: volumeConfirms ? (priceUp ? 1 : -1) : 0 });
+  }
+  let htfTrend = null;
+  if (htfResult) {
+    htfTrend = htfResult;
+    signals.push({ name: `اتجاه الفريم الأعلى (${htfResult.timeframe})`, value: htfResult.bullish ? 1 : -1 });
+  }
+  let fearGreed = null;
+  if (fngResult) {
+    fearGreed = fngResult;
+    // منطق عكسي: خوف شديد = فرصة تراكم محتملة، طمع شديد = حذر من تصحيح
+    const fngSignal = fngResult.value <= 25 ? 1 : fngResult.value >= 75 ? -1 : 0;
+    signals.push({ name: "مؤشر الخوف والطمع", value: fngSignal });
+  }
 
-  const direction = score >= 1 ? "buy" : score <= -1 ? "sell" : "none";
-  const verdict = score >= 3 ? "شراء قوي" : score >= 1 ? "شراء" : score <= -3 ? "بيع قوي" : score <= -1 ? "بيع" : "محايد";
-  const pIdx = klines.length - 2;
+  const score = signals.reduce((s, x) => s + x.value, 0);
+  const maxPossible = signals.length;
+  const confidencePct = maxPossible > 0 ? Math.round((Math.abs(score) / maxPossible) * 100) : 0;
+  const confidenceLabel = confidencePct >= 75 ? "قوي جدا" : confidencePct >= 55 ? "قوي" : confidencePct >= 35 ? "متوسط" : "ضعيف";
+
+  const direction = score >= 2 ? "buy" : score <= -2 ? "sell" : "none";
+  const verdict = direction === "buy" ? `شراء (${confidenceLabel})` : direction === "sell" ? `بيع (${confidenceLabel})` : "محايد - انتظار";
+
+  const pIdx = closes.length - 2;
   const pivot = (highs[pIdx] + lows[pIdx] + closes[pIdx]) / 3;
+  const swingWindow = 30;
+  const recentHighs = highs.slice(-swingWindow, -1);
+  const recentLows = lows.slice(-swingWindow, -1);
   const pivots = {
     r2: pivot + (highs[pIdx] - lows[pIdx]),
     r1: 2 * pivot - lows[pIdx],
     pivot,
     s1: 2 * pivot - highs[pIdx],
-    s2: pivot - (highs[pIdx] - lows[pIdx])
+    s2: pivot - (highs[pIdx] - lows[pIdx]),
+    swingHigh: Math.max(...recentHighs),
+    swingLow: Math.min(...recentLows)
   };
 
   let levels = null;
@@ -437,7 +480,10 @@ async function analyze(req, res) {
     };
   }
 
-  return json(res, 200, { currentPrice, score, verdict, direction, indicators, pivots, levels });
+  return json(res, 200, {
+    currentPrice, score, confidencePct, confidenceLabel, verdict, direction,
+    indicators, pivots, levels, signals, htfTrend, fearGreed
+  });
 }
 
 async function adminUsers(req, res) {
@@ -656,4 +702,147 @@ function atr(highs, lows, closes, period = 14) {
     trs.push(Math.max(highs[i] - lows[i], Math.abs(highs[i] - closes[i - 1]), Math.abs(lows[i] - closes[i - 1])));
   }
   return ema(trs, period);
+}
+
+function sma(values, period) {
+  const out = new Array(values.length).fill(null);
+  let sum = 0;
+  for (let i = 0; i < values.length; i++) {
+    sum += values[i];
+    if (i >= period) sum -= values[i - period];
+    if (i >= period - 1) out[i] = sum / period;
+  }
+  return out;
+}
+
+function bollinger(values, period = 20, mult = 2) {
+  const mid = sma(values, period);
+  const upper = new Array(values.length).fill(null);
+  const lower = new Array(values.length).fill(null);
+  for (let i = period - 1; i < values.length; i++) {
+    const slice = values.slice(i - period + 1, i + 1);
+    const mean = mid[i];
+    const variance = slice.reduce((s, v) => s + (v - mean) ** 2, 0) / period;
+    const sd = Math.sqrt(variance);
+    upper[i] = mean + mult * sd;
+    lower[i] = mean - mult * sd;
+  }
+  return { mid, upper, lower };
+}
+
+function stochasticRsi(rsiArr, period = 14) {
+  const out = new Array(rsiArr.length).fill(null);
+  for (let i = period - 1; i < rsiArr.length; i++) {
+    const slice = rsiArr.slice(i - period + 1, i + 1);
+    if (slice.some(v => v === null)) continue;
+    const hi = Math.max(...slice);
+    const lo = Math.min(...slice);
+    out[i] = hi === lo ? 50 : ((rsiArr[i] - lo) / (hi - lo)) * 100;
+  }
+  return out;
+}
+
+const YAHOO_HEADERS = { "User-Agent": "Mozilla/5.0 (compatible; SyriaTradingBot/1.0)" };
+
+function aggregateCandles(rows, groupSize) {
+  const out = [];
+  for (let i = 0; i < rows.length; i += groupSize) {
+    const chunk = rows.slice(i, i + groupSize);
+    if (!chunk.length) continue;
+    out.push({
+      close: chunk[chunk.length - 1].close,
+      high: Math.max(...chunk.map(c => c.high)),
+      low: Math.min(...chunk.map(c => c.low)),
+      volume: chunk.reduce((s, c) => s + (c.volume || 0), 0)
+    });
+  }
+  return out;
+}
+
+async function fetchBinanceKlines(symbol, interval, limit = 210) {
+  const [klineRes, priceRes] = await Promise.all([
+    fetch(`https://data-api.binance.vision/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`),
+    fetch(`https://data-api.binance.vision/api/v3/ticker/price?symbol=${symbol}`)
+  ]);
+  if (!klineRes.ok || !priceRes.ok) return null;
+  const klines = await klineRes.json();
+  const priceData = await priceRes.json();
+  if (!Array.isArray(klines) || klines.length < 60) return null;
+  return {
+    closes: klines.map(k => Number(k[4])),
+    highs: klines.map(k => Number(k[2])),
+    lows: klines.map(k => Number(k[3])),
+    volumes: klines.map(k => Number(k[5])),
+    currentPrice: Number(priceData.price)
+  };
+}
+
+async function fetchYahooKlines(symbol, interval) {
+  const map = {
+    "1m": { yInterval: "1m", range: "5d" },
+    "5m": { yInterval: "5m", range: "1mo" },
+    "15m": { yInterval: "15m", range: "1mo" },
+    "30m": { yInterval: "30m", range: "3mo" },
+    "1h": { yInterval: "60m", range: "6mo" },
+    "4h": { yInterval: "60m", range: "1y" },
+    "1d": { yInterval: "1d", range: "2y" },
+    "1w": { yInterval: "1wk", range: "5y" }
+  };
+  const cfg = map[interval] || map["1h"];
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=${cfg.range}&interval=${cfg.yInterval}`;
+  const r = await fetch(url, { headers: YAHOO_HEADERS });
+  if (!r.ok) return null;
+  const data = await r.json();
+  const result = data && data.chart && data.chart.result && data.chart.result[0];
+  if (!result || !result.timestamp || !result.indicators || !result.indicators.quote) return null;
+  const ts = result.timestamp;
+  const q = result.indicators.quote[0];
+  let rows = ts
+    .map((t, i) => ({ close: q.close[i], high: q.high[i], low: q.low[i], volume: q.volume[i] }))
+    .filter(r => r.close != null && r.high != null && r.low != null);
+  if (interval === "4h") rows = aggregateCandles(rows, 4);
+  rows = rows.slice(-210);
+  if (rows.length < 60) return null;
+  const currentPrice = result.meta && result.meta.regularMarketPrice != null
+    ? Number(result.meta.regularMarketPrice)
+    : rows[rows.length - 1].close;
+  return {
+    closes: rows.map(r => r.close),
+    highs: rows.map(r => r.high),
+    lows: rows.map(r => r.low),
+    volumes: rows.map(r => r.volume || 0),
+    currentPrice
+  };
+}
+
+async function fetchMarketData(symbol, interval, provider) {
+  return provider === "yahoo" ? fetchYahooKlines(symbol, interval) : fetchBinanceKlines(symbol, interval);
+}
+
+async function fetchHigherTimeframeTrend(symbol, interval, provider) {
+  const map = { "1m": "15m", "5m": "1h", "15m": "4h", "30m": "4h", "1h": "4h", "4h": "1d", "1d": "1w", "1w": "1w" };
+  const higherTf = map[interval] || "4h";
+  try {
+    const data = await fetchMarketData(symbol, higherTf, provider);
+    if (!data || data.closes.length < 55) return null;
+    const e20 = ema(data.closes, 20);
+    const e50 = ema(data.closes, 50);
+    const last = data.closes.length - 1;
+    return { timeframe: higherTf, bullish: e20[last] > e50[last] };
+  } catch {
+    return null;
+  }
+}
+
+async function fetchFearGreedIndex() {
+  try {
+    const r = await fetch("https://api.alternative.me/fng/?limit=1");
+    if (!r.ok) return null;
+    const d = await r.json();
+    const item = d && d.data && d.data[0];
+    if (!item) return null;
+    return { value: Number(item.value), classification: item.value_classification };
+  } catch {
+    return null;
+  }
 }
