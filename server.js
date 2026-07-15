@@ -463,8 +463,13 @@ async function analyze(req, res) {
   const confidencePct = maxPossible > 0 ? Math.round((Math.abs(score) / maxPossible) * 100) : 0;
   const confidenceLabel = confidencePct >= 75 ? "قوي جدا" : confidencePct >= 55 ? "قوي" : confidencePct >= 35 ? "متوسط" : "ضعيف";
 
-  const direction = score >= 2 ? "buy" : score <= -2 ? "sell" : "none";
-  const verdict = direction === "buy" ? `شراء (${confidenceLabel})` : direction === "sell" ? `بيع (${confidenceLabel})` : "محايد - انتظار";
+  // شرط دخول مشدد: لازم يكون التوافق قوي (60%+) ومعظم المؤشرات باتجاه واحد،
+  // هذا يقلل الصفقات الضعيفة (Noise) ويبقي فقط الفرص عالية الجودة
+  const strongThreshold = Math.max(3, Math.ceil(maxPossible * 0.6));
+  const direction = (score >= strongThreshold && confidencePct >= 60) ? "buy"
+    : (score <= -strongThreshold && confidencePct >= 60) ? "sell"
+    : "none";
+  const verdict = direction === "buy" ? `شراء (${confidenceLabel})` : direction === "sell" ? `بيع (${confidenceLabel})` : "لا توجد صفقة كافية القوة - انتظار";
 
   const pIdx = closes.length - 2;
   const pivot = (highs[pIdx] + lows[pIdx] + closes[pIdx]) / 3;
@@ -485,12 +490,31 @@ async function analyze(req, res) {
   if (direction !== "none") {
     const entry = currentPrice;
     const atrValue = indicators.atr;
+    // وقف خسارة ذكي: خلف آخر قمة/قاع فعلي بالهيكل بدل رقم ثابت،
+    // مع حد أدنى وأقصى مبني على ATR لتفادي وقف ضيق جدا أو واسع جدا
+    let stopLoss;
+    if (direction === "buy") {
+      const structuralStop = pivots.swingLow - atrValue * 0.3;
+      const minStop = entry - atrValue * 1.2;
+      const maxStop = entry - atrValue * 2.5;
+      stopLoss = Math.min(minStop, Math.max(structuralStop, maxStop));
+    } else {
+      const structuralStop = pivots.swingHigh + atrValue * 0.3;
+      const minStop = entry + atrValue * 1.2;
+      const maxStop = entry + atrValue * 2.5;
+      stopLoss = Math.max(minStop, Math.min(structuralStop, maxStop));
+    }
+    // الأهداف = مضاعفات من المخاطرة الفعلية (R) لضمان نسبة مخاطرة/عائد قوية وثابتة
+    const risk = Math.abs(entry - stopLoss);
+    const dir = direction === "buy" ? 1 : -1;
     levels = {
       entry,
-      stopLoss: direction === "buy" ? entry - atrValue : entry + atrValue,
-      takeProfit1: direction === "buy" ? entry + atrValue : entry - atrValue,
-      takeProfit2: direction === "buy" ? entry + atrValue * 2 : entry - atrValue * 2,
-      takeProfit3: direction === "buy" ? entry + atrValue * 3 : entry - atrValue * 3
+      stopLoss,
+      takeProfit1: entry + dir * risk * 1.5,
+      takeProfit2: entry + dir * risk * 3,
+      takeProfit3: entry + dir * risk * 5,
+      riskAmount: risk,
+      riskReward: "1:1.5 / 1:3 / 1:5"
     };
   }
 
