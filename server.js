@@ -59,6 +59,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "GET" && url.pathname === "/api/admin/keys") return adminListKeys(req, res);
     if (req.method === "POST" && url.pathname === "/api/redeem") return redeemKey(req, res);
     if (req.method === "POST" && url.pathname === "/api/stripe/webhook") return stripeWebhook(req, res);
+    if (req.method === "GET" && url.pathname === "/api/daily-results") return dailyResults(req, res);
 
     return serveStatic(url.pathname, res);
   } catch (error) {
@@ -69,6 +70,10 @@ const server = http.createServer(async (req, res) => {
 server.listen(PORT, () => {
   console.log(`SYRIA TRADING is running at ${APP_URL}`);
 });
+
+// فحص فوري عند البدء (بعد جهوزية القاعدة)، ثم كل 5 دقائق: يتابع الصفقات المفتوحة ويحدد هل وصلت لهدف أو وقف
+dbReadyPromise.then(checkOpenSignals).catch(() => {});
+setInterval(checkOpenSignals, 5 * 60 * 1000);
 
 function loadEnv() {
   const file = path.join(__dirname, ".env");
@@ -123,6 +128,23 @@ async function ensureDb() {
       used_by TEXT,
       used_by_email TEXT,
       used_at TEXT
+    );
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS trade_signals (
+      id TEXT PRIMARY KEY,
+      symbol TEXT NOT NULL,
+      provider TEXT NOT NULL,
+      direction TEXT NOT NULL,
+      entry DOUBLE PRECISION NOT NULL,
+      stop_loss DOUBLE PRECISION NOT NULL,
+      tp1 DOUBLE PRECISION NOT NULL,
+      tp2 DOUBLE PRECISION NOT NULL,
+      tp3 DOUBLE PRECISION NOT NULL,
+      status TEXT NOT NULL DEFAULT 'open',
+      result_r DOUBLE PRECISION,
+      created_at TEXT NOT NULL,
+      closed_at TEXT
     );
   `);
 }
@@ -516,6 +538,10 @@ async function analyze(req, res) {
       riskAmount: risk,
       riskReward: "1:1.5 / 1:3 / 1:5"
     };
+  }
+
+  if (levels) {
+    await logTradeSignal(symbol, cleanProvider, direction, levels);
   }
 
   const chartLen = 150;
@@ -996,4 +1022,99 @@ async function fetchFearGreedIndex() {
   } catch {
     return null;
   }
+}
+
+// ===== تتبع الصفقات والمحصول اليومي =====
+
+async function fetchCurrentPriceOnly(symbol, provider) {
+  try {
+    if (provider === "yahoo") {
+      const r = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=1d&interval=5m`, { headers: YAHOO_HEADERS });
+      if (!r.ok) return null;
+      const data = await r.json();
+      const result = data && data.chart && data.chart.result && data.chart.result[0];
+      const price = result && result.meta && result.meta.regularMarketPrice;
+      return price != null ? Number(price) : null;
+    }
+    const r = await fetch(`https://data-api.binance.vision/api/v3/ticker/price?symbol=${symbol}`);
+    if (!r.ok) return null;
+    const d = await r.json();
+    return Number(d.price);
+  } catch {
+    return null;
+  }
+}
+
+async function logTradeSignal(symbol, provider, direction, levels) {
+  try {
+    const sixHoursAgo = new Date(Date.now() - 6 * 3600 * 1000).toISOString();
+    const { rows } = await pool.query(
+      "SELECT id FROM trade_signals WHERE symbol = $1 AND status = 'open' AND created_at > $2 LIMIT 1",
+      [symbol, sixHoursAgo]
+    );
+    if (rows.length) return; // فيه صفقة مفتوحة حديثة لنفس الرمز، لا داعي لتكرارها
+    await pool.query(
+      `INSERT INTO trade_signals (id, symbol, provider, direction, entry, stop_loss, tp1, tp2, tp3, status, created_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'open',$10)`,
+      [crypto.randomUUID(), symbol, provider, direction, levels.entry, levels.stopLoss, levels.takeProfit1, levels.takeProfit2, levels.takeProfit3, new Date().toISOString()]
+    );
+  } catch (e) {
+    console.error("تعذر تسجيل الصفقة:", e.message);
+  }
+}
+
+async function checkOpenSignals() {
+  try {
+    const { rows } = await pool.query("SELECT * FROM trade_signals WHERE status = 'open' LIMIT 100");
+    for (const s of rows) {
+      const price = await fetchCurrentPriceOnly(s.symbol, s.provider);
+      if (price == null) continue;
+      let status = null, resultR = null;
+      if (s.direction === "buy") {
+        if (price <= s.stop_loss) { status = "sl"; resultR = -1; }
+        else if (price >= s.tp3) { status = "tp3"; resultR = 5; }
+        else if (price >= s.tp2) { status = "tp2"; resultR = 3; }
+        else if (price >= s.tp1) { status = "tp1"; resultR = 1.5; }
+      } else {
+        if (price >= s.stop_loss) { status = "sl"; resultR = -1; }
+        else if (price <= s.tp3) { status = "tp3"; resultR = 5; }
+        else if (price <= s.tp2) { status = "tp2"; resultR = 3; }
+        else if (price <= s.tp1) { status = "tp1"; resultR = 1.5; }
+      }
+      if (status) {
+        await pool.query(
+          "UPDATE trade_signals SET status = $1, result_r = $2, closed_at = $3 WHERE id = $4",
+          [status, resultR, new Date().toISOString(), s.id]
+        );
+      }
+    }
+  } catch (e) {
+    console.error("خطأ أثناء فحص الصفقات المفتوحة:", e.message);
+  }
+}
+
+async function dailyResults(req, res) {
+  const todayStart = new Date();
+  todayStart.setUTCHours(0, 0, 0, 0);
+  const { rows } = await pool.query(
+    "SELECT * FROM trade_signals WHERE created_at >= $1 ORDER BY created_at DESC LIMIT 100",
+    [todayStart.toISOString()]
+  );
+  const closed = rows.filter(r => r.status !== "open");
+  const wins = closed.filter(r => r.status !== "sl");
+  const losses = closed.filter(r => r.status === "sl");
+  const totalR = closed.reduce((s, r) => s + (Number(r.result_r) || 0), 0);
+  return json(res, 200, {
+    date: todayStart.toISOString().slice(0, 10),
+    totalSignals: rows.length,
+    openCount: rows.length - closed.length,
+    wins: wins.length,
+    losses: losses.length,
+    winRatePct: closed.length ? Math.round((wins.length / closed.length) * 100) : null,
+    totalR: Math.round(totalR * 100) / 100,
+    trades: rows.slice(0, 15).map(r => ({
+      symbol: r.symbol, direction: r.direction, status: r.status,
+      resultR: r.result_r, createdAt: r.created_at
+    }))
+  });
 }

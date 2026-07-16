@@ -20,8 +20,10 @@
     header{position:sticky;top:0;z-index:5;background:rgba(9,13,18,.9);backdrop-filter:blur(12px);border-bottom:1px solid var(--line)}.top{max-width:1240px;margin:auto;padding:13px 20px;display:flex;justify-content:space-between;align-items:center;gap:14px}.nav{display:flex;gap:18px;align-items:center;color:var(--muted);font-size:14px}.nav a{text-decoration:none}.member{color:var(--gold2);font-weight:800}
     main{max-width:1240px;margin:auto;padding:28px 20px 70px}.hero{display:grid;grid-template-columns:1.05fr .95fr;gap:24px;align-items:center;margin:18px 0 28px}.hero h1{font-size:clamp(30px,5vw,54px);line-height:1.18}.hero p{color:var(--muted);font-size:16px;max-width:620px}.visual{min-height:260px;border:1px solid var(--line);border-radius:8px;background:linear-gradient(150deg,#151c26,#0e141c);display:grid;place-items:center;overflow:hidden}.visual svg{width:92%;height:220px}
     .panel,.card{background:var(--panel);border:1px solid var(--line);border-radius:8px}.panel{padding:18px}.grid{display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:12px;align-items:end}.field label{display:block;color:var(--muted);font-size:13px;font-weight:700}.ticker{height:46px;border-top:1px solid var(--line)}
-    #results{margin-top:20px}.chart{height:720px;position:relative}.chart-head{display:flex;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--line)}.cards{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px}.card{padding:18px}.card.full{grid-column:1/-1}.sub{color:var(--muted);font-size:13px;margin-top:4px}.level{display:flex;justify-content:space-between;border-bottom:1px solid var(--line);padding:10px 0}.level:last-child{border-bottom:0}.ok{color:var(--green)}.bad{color:var(--red)}.note{background:#1b2430;border:1px solid var(--line);border-radius:8px;padding:14px;color:var(--muted)}.indicator{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:12px}.mini{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:10px}.mini span{display:block;color:var(--muted);font-size:12px}.mini b{font-family:"JetBrains Mono";direction:ltr}.loader{color:var(--muted);padding:16px}.smcLine{display:flex;justify-content:space-between;padding:6px 0;font-size:13px;color:var(--muted)}.smcLine b{color:var(--text)}
-    @media(max-width:860px){.hero,.grid,.cards{grid-template-columns:1fr}.nav{flex-wrap:wrap;justify-content:flex-end}.chart{height:480px}.indicator{grid-template-columns:1fr 1fr}}
+    #results{margin-top:20px}.chart{height:720px;position:relative}.chart-head{display:flex;justify-content:space-between;align-items:center;padding:14px 18px;border-bottom:1px solid var(--line)}.liveBadge{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)}.liveDot{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 0 0 rgba(40,215,156,.6);animation:pulse 1.6s infinite}@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(40,215,156,.55)}70%{box-shadow:0 0 0 8px rgba(40,215,156,0)}100%{box-shadow:0 0 0 0 rgba(40,215,156,0)}}
+    .cards{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px}.card{padding:18px}.card.full{grid-column:1/-1}.sub{color:var(--muted);font-size:13px;margin-top:4px}.level{display:flex;justify-content:space-between;border-bottom:1px solid var(--line);padding:10px 0}.level:last-child{border-bottom:0}.ok{color:var(--green)}.bad{color:var(--red)}.note{background:#1b2430;border:1px solid var(--line);border-radius:8px;padding:14px;color:var(--muted)}.indicator{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:12px}.mini{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:10px}.mini span{display:block;color:var(--muted);font-size:12px}.mini b{font-family:"JetBrains Mono";direction:ltr}.loader{color:var(--muted);padding:16px}.smcLine{display:flex;justify-content:space-between;padding:6px 0;font-size:13px;color:var(--muted)}.smcLine b{color:var(--text)}
+    .dailyBox{margin-top:18px;padding:16px;background:var(--panel2);border:1px solid var(--line);border-radius:8px}.dailyBox h4{margin:0 0 10px;font-family:Cairo,sans-serif;text-align:center;color:var(--gold2);font-size:14px}.dailyStats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}.dailyStats div{text-align:center}.dailyStats b{display:block;font-size:18px;font-family:"JetBrains Mono"}.dailyStats span{color:var(--muted);font-size:11px}
+    @media(max-width:860px){.hero,.grid,.cards{grid-template-columns:1fr}.nav{flex-wrap:wrap;justify-content:flex-end}.chart{height:480px}.indicator{grid-template-columns:1fr 1fr}.dailyStats{grid-template-columns:1fr 1fr}}
   </style>
 </head>
 <body>
@@ -56,6 +58,7 @@
         <p class="tinyNote">لطلب مفتاح تفعيل تواصل معنا عبر <a href="https://t.me/Y_A0Z" target="_blank" rel="noopener">تلغرام</a>.</p>
         <a class="switch" href="#" id="backToLogin">تسجيل خروج والعودة لتسجيل الدخول</a>
       </section>
+      <div id="gateDailyResults" class="dailyBox hidden"></div>
     </div>
   </div>
 
@@ -92,6 +95,8 @@
       </div>
     </section>
 
+    <div id="memberDailyResults" class="dailyBox hidden"></div>
+
     <section id="analyzer" class="panel">
       <div class="grid">
         <div class="field"><label>السوق</label><select id="marketSelect"></select></div>
@@ -103,7 +108,7 @@
 
     <section id="results" class="hidden">
       <div class="panel">
-        <div class="chart-head"><span class="mono" id="chartSym">-</span><span id="chartTf">-</span></div>
+        <div class="chart-head"><span class="mono" id="chartSym">-</span><span class="liveBadge" id="liveBadge"><span class="liveDot"></span><span id="liveBadgeText">مباشر</span></span><span id="chartTf">-</span></div>
         <div class="chart">
           <div id="liveChart" style="width:100%;height:100%"></div>
           <div id="tvFallback" class="tradingview-widget-container hidden" style="width:100%;height:100%"></div>
@@ -135,6 +140,23 @@
     $("backToLogin").onclick=async e=>{e.preventDefault();await api("/api/logout",{});$("keyInput").value="";$("subErr").textContent="";showAuth("loginView")};
     $("logoutBtn").onclick=async()=>{await api("/api/logout",{});location.reload()};
     async function boot(){const d=await api("/api/me"); if(!d.user){$("gate").classList.remove("hidden");return} d.user.subscribed||d.user.role==="admin"?enter(d.user):needSubscription(d.user)}
+    async function loadDailyResults(){
+      try{
+        const d=await api("/api/daily-results");
+        const wr=d.winRatePct!=null?`${d.winRatePct}%`:"-";
+        const rColor=d.totalR>0?"ok":d.totalR<0?"bad":"";
+        const html=`<h4>📊 محصول اليوم (${d.date})</h4><div class="dailyStats">
+          <div><b>${d.totalSignals}</b><span>صفقة اليوم</span></div>
+          <div><b class="ok">${d.wins}</b><span>رابحة</span></div>
+          <div><b class="bad">${d.losses}</b><span>خاسرة</span></div>
+          <div><b class="${rColor}">${d.totalR>0?"+":""}${d.totalR}R</b><span>مجموع النقاط</span></div>
+        </div>`;
+        $("gateDailyResults").innerHTML=html;$("gateDailyResults").classList.remove("hidden");
+        $("memberDailyResults").innerHTML=html;$("memberDailyResults").classList.remove("hidden");
+      }catch(e){}
+    }
+    loadDailyResults();
+    setInterval(loadDailyResults,5*60*1000);
     function fill(){marketSelect.innerHTML=Object.keys(MARKETS).map(k=>`<option value="${k}">${MARKETS[k].label}</option>`).join("");timeframeSelect.innerHTML=TFS.map((t,i)=>`<option value="${i}" ${i===4?"selected":""}>${t[0]}</option>`).join("");populate("crypto")}
     function populate(k){symbolSelect.innerHTML=MARKETS[k].symbols.map(s=>`<option value="${s[0]}">${s[1]}</option>`).join("")}
     marketSelect.onchange=e=>populate(e.target.value);
@@ -190,7 +212,34 @@
       $("decision").innerHTML=`<div class="note"><h2 class="${color}">${d.verdict}</h2><p>قوة الإشارة: <b class="mono">${d.confidencePct}%</b> (${d.signals.length} مؤشرات مجتمعة)</p></div><div class="indicator"><div class="mini"><span>RSI</span><b>${d.indicators.rsi.toFixed(1)}</b></div>${stochRow}<div class="mini"><span>ATR</span><b>${fp(d.indicators.atr)}</b></div><div class="mini"><span>EMA20</span><b>${fp(d.indicators.ema20)}</b></div><div class="mini"><span>EMA50</span><b>${fp(d.indicators.ema50)}</b></div>${bbRow}${htfRow}${fngRow}</div><div style="margin-top:14px;border-top:1px solid var(--line);padding-top:8px">${smcLines.join("")}</div>`;
       if(!d.levels){$("levels").innerHTML='<div class="note">لا توجد صفقة كافية القوة حاليا. النظام يرفض الدخول إلا بتوافق قوي جدا بين المؤشرات لتقليل الصفقات الخاسرة.</div>';return}
       $("levels").innerHTML=`<div class="sub" style="margin-bottom:8px">نسبة المخاطرة/العائد: <b class="mono ok">${d.levels.riskReward}</b> — وقف الخسارة مبني على هيكل السوق الفعلي</div>`+[["الدخول",d.levels.entry],["وقف الخسارة",d.levels.stopLoss],["الهدف الأول",d.levels.takeProfit1],["الهدف الثاني",d.levels.takeProfit2],["الهدف الثالث",d.levels.takeProfit3],["Pivot",d.pivots.pivot],["أعلى سعر حديث",d.pivots.swingHigh],["أدنى سعر حديث",d.pivots.swingLow]].map(x=>`<div class="level"><span>${x[0]}</span><b class="mono">${fp(x[1])}</b></div>`).join("")+'<p class="sub" style="margin-top:10px">كل هذه المستويات مرسومة مباشرة كخطوط على الشارت أعلاه.</p>'}
-    $("analyzeBtn").onclick=async()=>{const market=marketSelect.value,tf=TFS[Number(timeframeSelect.value)],sym=symbolSelect.value,meta=MARKETS[market].symbols.find(s=>s[0]===sym);$("results").classList.remove("hidden");$("chartSym").textContent=sym;$("chartTf").textContent=tf[0];renderSummary(sym,tf);$("decision").innerHTML='<div class="loader">جاري التحليل...</div>';$("levels").innerHTML='<div class="loader">جاري حساب المستويات...</div>'; if(!meta[2]){renderFallbackChart(sym,tf);$("decision").innerHTML='<div class="note">لهذه الأداة استخدم ملخص TradingView بالأسفل، لأن بيانات الدخول الدقيقة غير متاحة حاليا لهذا الرمز.</div>';$("levels").innerHTML='<div class="note">ضع الوقف خلف آخر قمة أو قاع واضح، واختر أهدافا لا تقل عن نسبة 1:2.</div>';return} try{const d=await api("/api/analyze",{symbol:meta[2],provider:meta[3]||"binance",interval:tf[3]});renderLiveChart(d);renderAnalysis(d)}catch(e){$("decision").innerHTML=`<div class="note bad">${e.message}</div>`;$("levels").innerHTML='<div class="note">تحقق من اتصال الخادم بالإنترنت أو جرب أداة أخرى.</div>'}};
+    let liveSocket=null, liveTimer=null;
+    function stopLiveFeed(){if(liveSocket){try{liveSocket.close()}catch(e){}liveSocket=null}if(liveTimer){clearInterval(liveTimer);liveTimer=null}$("liveBadge").classList.add("hidden")}
+    function startLiveFeed(meta,tf){
+      stopLiveFeed();
+      const symbol=meta[2],provider=meta[3]||"binance";
+      if(!symbol)return;
+      $("liveBadge").classList.remove("hidden");
+      if(provider==="binance"){
+        $("liveBadgeText").textContent="مباشر (بث لحظي)";
+        try{
+          liveSocket=new WebSocket(`wss://stream.binance.com:9443/ws/${symbol.toLowerCase()}@kline_${tf[3]}`);
+          liveSocket.onmessage=ev=>{
+            try{const msg=JSON.parse(ev.data),k=msg.k;if(!k||!candleSeries)return;
+              candleSeries.update({time:Math.floor(k.t/1000),open:Number(k.o),high:Number(k.h),low:Number(k.l),close:Number(k.c)});
+            }catch(e){}
+          };
+          liveSocket.onerror=()=>{$("liveBadgeText").textContent="تعذر البث المباشر"};
+        }catch(e){}
+        liveTimer=setInterval(()=>refreshAnalysis(meta,tf),60000);
+      }else{
+        $("liveBadgeText").textContent="تحديث كل 30 ثانية";
+        liveTimer=setInterval(()=>refreshAnalysis(meta,tf),30000);
+      }
+    }
+    async function refreshAnalysis(meta,tf){
+      try{const d=await api("/api/analyze",{symbol:meta[2],provider:meta[3]||"binance",interval:tf[3]});renderLiveChart(d);renderAnalysis(d)}catch(e){}
+    }
+    $("analyzeBtn").onclick=async()=>{const market=marketSelect.value,tf=TFS[Number(timeframeSelect.value)],sym=symbolSelect.value,meta=MARKETS[market].symbols.find(s=>s[0]===sym);$("results").classList.remove("hidden");$("chartSym").textContent=sym;$("chartTf").textContent=tf[0];renderSummary(sym,tf);$("decision").innerHTML='<div class="loader">جاري التحليل...</div>';$("levels").innerHTML='<div class="loader">جاري حساب المستويات...</div>';stopLiveFeed(); if(!meta[2]){renderFallbackChart(sym,tf);$("decision").innerHTML='<div class="note">لهذه الأداة استخدم ملخص TradingView بالأسفل، لأن بيانات الدخول الدقيقة غير متاحة حاليا لهذا الرمز.</div>';$("levels").innerHTML='<div class="note">ضع الوقف خلف آخر قمة أو قاع واضح، واختر أهدافا لا تقل عن نسبة 1:2.</div>';return} try{const d=await api("/api/analyze",{symbol:meta[2],provider:meta[3]||"binance",interval:tf[3]});renderLiveChart(d);renderAnalysis(d);startLiveFeed(meta,tf)}catch(e){$("decision").innerHTML=`<div class="note bad">${e.message}</div>`;$("levels").innerHTML='<div class="note">تحقق من اتصال الخادم بالإنترنت أو جرب أداة أخرى.</div>'}};
     tvScript($("tickerTape"),"https://s3.tradingview.com/external-embedding/embed-widget-ticker-tape.js",{symbols:[{proName:"BINANCE:BTCUSDT",title:"BTC"},{proName:"BINANCE:ETHUSDT",title:"ETH"},{proName:"FX:EURUSD",title:"EUR/USD"},{proName:"OANDA:XAUUSD",title:"GOLD"},{proName:"TVC:DXY",title:"DXY"}],showSymbolLogo:true,isTransparent:true,displayMode:"adaptive",colorTheme:"dark",locale:"ar"});
     fill(); boot();
   </script>
