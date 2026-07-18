@@ -49,6 +49,15 @@
         <button class="primary full" id="signupBtn">إنشاء الحساب</button>
         <a class="switch" href="#" id="toLogin">لديك حساب؟ تسجيل الدخول</a>
       </section>
+      <section id="verifyView" class="hidden">
+        <h2>تأكيد البريد الإلكتروني</h2>
+        <p>أرسلنا رمز تحقق من 6 أرقام إلى بريدك. أدخله لتأكيد الحساب.</p>
+        <div class="err" id="verifyErr"></div>
+        <input id="verifyCode" placeholder="رمز التحقق" class="mono" style="text-align:center" maxlength="6">
+        <button class="primary full" id="verifyBtn">تأكيد</button>
+        <a class="switch" href="#" id="resendCode">إعادة إرسال الرمز</a>
+        <a class="switch" href="#" id="verifyBackToLogin">تسجيل خروج والعودة لتسجيل الدخول</a>
+      </section>
       <section id="subscribeView" class="hidden">
         <h2>تفعيل العضوية</h2>
         <p>حسابك محفوظ على الخادم. أدخل مفتاح التفعيل الذي حصلت عليه لتفعيل عضويتك.</p>
@@ -76,6 +85,7 @@
   </header>
 
   <main>
+    <div id="telegramBox" class="dailyBox hidden"></div>
     <section class="hero">
       <div>
         <h1>شارت حي وتحليل دخول وأهداف للأعضاء فقط</h1>
@@ -130,16 +140,38 @@
     const $=id=>document.getElementById(id);
     const API_BASE=location.protocol==="file:"?"http://localhost:3000":"";
     const api=(url,body)=>fetch(API_BASE+url,{method:body?"POST":"GET",headers:{"Content-Type":"application/json"},credentials:"include",body:body?JSON.stringify(body):undefined}).then(async r=>{const d=await r.json();if(!r.ok)throw new Error(d.error||"تعذر تنفيذ الطلب");return d});
-    function showAuth(name){["loginView","signupView","subscribeView"].forEach(id=>$(id).classList.toggle("hidden",id!==name))}
-    function enter(user){currentUser=user;$("gate").classList.add("hidden");$("memberGreeting").textContent=user.name;$("adminLink").classList.toggle("hidden",user.role!=="admin")}
-    function needSubscription(user){currentUser=user;showAuth("subscribeView");$("gate").classList.remove("hidden")}
+    function showAuth(name){["loginView","signupView","verifyView","subscribeView"].forEach(id=>$(id).classList.toggle("hidden",id!==name))}
+    function enter(user){currentUser=user;$("gate").classList.add("hidden");$("memberGreeting").textContent=user.name;$("adminLink").classList.toggle("hidden",user.role!=="admin");loadTelegramBox()}
+    function routeUser(user){
+      currentUser=user;
+      if(user.role==="admin"){enter(user);return}
+      if(!user.emailVerified){showAuth("verifyView");$("gate").classList.remove("hidden");return}
+      if(!user.subscribed){showAuth("subscribeView");$("gate").classList.remove("hidden");return}
+      enter(user);
+    }
     $("toSignup").onclick=e=>{e.preventDefault();showAuth("signupView")}; $("toLogin").onclick=e=>{e.preventDefault();showAuth("loginView")};
-    $("signupBtn").onclick=async()=>{try{const d=await api("/api/signup",{name:$("signupName").value,email:$("signupEmail").value,password:$("signupPassword").value});needSubscription(d.user)}catch(e){$("signupErr").textContent=e.message}};
-    $("loginBtn").onclick=async()=>{try{const d=await api("/api/login",{email:$("loginEmail").value,password:$("loginPassword").value});d.user.subscribed||d.user.role==="admin"?enter(d.user):needSubscription(d.user)}catch(e){$("loginErr").textContent=e.message}};
+    $("signupBtn").onclick=async()=>{try{const d=await api("/api/signup",{name:$("signupName").value,email:$("signupEmail").value,password:$("signupPassword").value});routeUser(d.user)}catch(e){$("signupErr").textContent=e.message}};
+    $("loginBtn").onclick=async()=>{try{const d=await api("/api/login",{email:$("loginEmail").value,password:$("loginPassword").value});routeUser(d.user)}catch(e){$("loginErr").textContent=e.message}};
+    $("verifyBtn").onclick=async()=>{try{const d=await api("/api/verify-email",{code:$("verifyCode").value});routeUser(d.user)}catch(e){$("verifyErr").textContent=e.message}};
+    $("resendCode").onclick=async e=>{e.preventDefault();$("verifyErr").style.color="";$("verifyErr").textContent="";try{await api("/api/resend-verification",{});$("verifyErr").style.color="var(--green)";$("verifyErr").textContent="تم إرسال رمز جديد لبريدك."}catch(e){$("verifyErr").textContent=e.message}};
     $("redeemBtn").onclick=async()=>{try{const d=await api("/api/redeem",{code:$("keyInput").value});enter(d.user)}catch(e){$("subErr").textContent=e.message}};
     $("backToLogin").onclick=async e=>{e.preventDefault();await api("/api/logout",{});$("keyInput").value="";$("subErr").textContent="";showAuth("loginView")};
+    $("verifyBackToLogin").onclick=async e=>{e.preventDefault();await api("/api/logout",{});$("verifyCode").value="";$("verifyErr").textContent="";showAuth("loginView")};
     $("logoutBtn").onclick=async()=>{await api("/api/logout",{});location.reload()};
-    async function boot(){const d=await api("/api/me"); if(!d.user){$("gate").classList.remove("hidden");return} d.user.subscribed||d.user.role==="admin"?enter(d.user):needSubscription(d.user)}
+    async function boot(){const d=await api("/api/me"); if(!d.user){$("gate").classList.remove("hidden");return} routeUser(d.user)}
+    async function loadTelegramBox(){
+      try{
+        const d=await api("/api/telegram/link-info");
+        if(d.linked){
+          $("telegramBox").innerHTML='<h4>🔔 التنبيهات</h4><p class="sub" style="text-align:center">تلغرام مربوط ✅ — رح توصلك الصفقات فور ظهورها.</p>';
+        }else if(d.botUsername){
+          $("telegramBox").innerHTML=`<h4>🔔 فعّل تنبيهات تلغرام</h4><p class="sub" style="text-align:center">اضغط الزر وابعت أي رسالة للبوت ليتفعل الربط تلقائيا.</p><a class="btn primary full" href="${d.deepLink}" target="_blank" rel="noopener">ربط حساب تلغرام</a>`;
+        }else{
+          $("telegramBox").innerHTML='<h4>🔔 التنبيهات</h4><p class="sub" style="text-align:center">تنبيهات تلغرام غير مفعلة حاليا من إدارة الموقع.</p>';
+        }
+        $("telegramBox").classList.remove("hidden");
+      }catch(e){}
+    }
     async function loadDailyResults(){
       try{
         const d=await api("/api/daily-results");
@@ -212,8 +244,8 @@
       $("decision").innerHTML=`<div class="note"><h2 class="${color}">${d.verdict}</h2><p>قوة الإشارة: <b class="mono">${d.confidencePct}%</b> (${d.signals.length} مؤشرات مجتمعة)</p></div><div class="indicator"><div class="mini"><span>RSI</span><b>${d.indicators.rsi.toFixed(1)}</b></div>${stochRow}<div class="mini"><span>ATR</span><b>${fp(d.indicators.atr)}</b></div><div class="mini"><span>EMA20</span><b>${fp(d.indicators.ema20)}</b></div><div class="mini"><span>EMA50</span><b>${fp(d.indicators.ema50)}</b></div>${bbRow}${htfRow}${fngRow}</div><div style="margin-top:14px;border-top:1px solid var(--line);padding-top:8px">${smcLines.join("")}</div>`;
       if(!d.levels){$("levels").innerHTML='<div class="note">لا توجد صفقة كافية القوة حاليا. النظام يرفض الدخول إلا بتوافق قوي جدا بين المؤشرات لتقليل الصفقات الخاسرة.</div>';return}
       $("levels").innerHTML=`<div class="sub" style="margin-bottom:8px">نسبة المخاطرة/العائد: <b class="mono ok">${d.levels.riskReward}</b> — وقف الخسارة مبني على هيكل السوق الفعلي</div>`+[["الدخول",d.levels.entry],["وقف الخسارة",d.levels.stopLoss],["الهدف الأول",d.levels.takeProfit1],["الهدف الثاني",d.levels.takeProfit2],["الهدف الثالث",d.levels.takeProfit3],["Pivot",d.pivots.pivot],["أعلى سعر حديث",d.pivots.swingHigh],["أدنى سعر حديث",d.pivots.swingLow]].map(x=>`<div class="level"><span>${x[0]}</span><b class="mono">${fp(x[1])}</b></div>`).join("")+'<p class="sub" style="margin-top:10px">كل هذه المستويات مرسومة مباشرة كخطوط على الشارت أعلاه.</p>'}
-    let liveSocket=null, liveTimer=null;
-    function stopLiveFeed(){if(liveSocket){try{liveSocket.close()}catch(e){}liveSocket=null}if(liveTimer){clearInterval(liveTimer);liveTimer=null}$("liveBadge").classList.add("hidden")}
+    let liveSource=null, liveTimer=null;
+    function stopLiveFeed(){if(liveSource){try{liveSource.close()}catch(e){}liveSource=null}if(liveTimer){clearInterval(liveTimer);liveTimer=null}$("liveBadge").classList.add("hidden")}
     function startLiveFeed(meta,tf){
       stopLiveFeed();
       const symbol=meta[2],provider=meta[3]||"binance";
@@ -222,13 +254,11 @@
       if(provider==="binance"){
         $("liveBadgeText").textContent="مباشر (بث لحظي)";
         try{
-          liveSocket=new WebSocket(`wss://stream.binance.com:9443/ws/${symbol.toLowerCase()}@kline_${tf[3]}`);
-          liveSocket.onmessage=ev=>{
-            try{const msg=JSON.parse(ev.data),k=msg.k;if(!k||!candleSeries)return;
-              candleSeries.update({time:Math.floor(k.t/1000),open:Number(k.o),high:Number(k.h),low:Number(k.l),close:Number(k.c)});
-            }catch(e){}
+          liveSource=new EventSource(API_BASE+"/api/live-stream?symbol="+encodeURIComponent(symbol)+"&interval="+encodeURIComponent(tf[3]));
+          liveSource.onmessage=ev=>{
+            try{const k=JSON.parse(ev.data);if(!candleSeries)return;candleSeries.update(k);$("liveBadgeText").textContent="مباشر — آخر سعر "+fp(k.close)}catch(e){}
           };
-          liveSocket.onerror=()=>{$("liveBadgeText").textContent="تعذر البث المباشر"};
+          liveSource.onerror=()=>{$("liveBadgeText").textContent="إعادة الاتصال..."};
         }catch(e){}
         liveTimer=setInterval(()=>refreshAnalysis(meta,tf),60000);
       }else{

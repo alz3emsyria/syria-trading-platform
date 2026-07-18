@@ -1,4 +1,5 @@
 const http = require("http");
+const WebSocket = require("ws");
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
@@ -48,6 +49,10 @@ const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, APP_URL);
 
     if (req.method === "POST" && url.pathname === "/api/signup") return signup(req, res);
+    if (req.method === "POST" && url.pathname === "/api/verify-email") return verifyEmail(req, res);
+    if (req.method === "POST" && url.pathname === "/api/resend-verification") return resendVerification(req, res);
+    if (req.method === "GET" && url.pathname === "/api/telegram/link-info") return telegramLinkInfo(req, res);
+    if (req.method === "POST" && url.pathname === "/api/telegram/webhook") return telegramWebhook(req, res);
     if (req.method === "POST" && url.pathname === "/api/login") return login(req, res);
     if (req.method === "POST" && url.pathname === "/api/logout") return logout(res);
     if (req.method === "GET" && url.pathname === "/api/me") return me(req, res);
@@ -60,6 +65,8 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "POST" && url.pathname === "/api/redeem") return redeemKey(req, res);
     if (req.method === "POST" && url.pathname === "/api/stripe/webhook") return stripeWebhook(req, res);
     if (req.method === "GET" && url.pathname === "/api/daily-results") return dailyResults(req, res);
+    if (req.method === "GET" && url.pathname === "/api/live-stream") return liveStream(req, res, url);
+    if (req.method === "GET" && url.pathname === "/api/price") return priceTick(req, res, url);
 
     return serveStatic(url.pathname, res);
   } catch (error) {
@@ -102,6 +109,11 @@ async function ensureDb() {
       created_at TEXT NOT NULL
     );
   `);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified BOOLEAN NOT NULL DEFAULT false;`);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS verify_code TEXT;`);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS verify_expires TEXT;`);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS telegram_chat_id TEXT;`);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS telegram_link_code TEXT;`);
   await pool.query(`
     CREATE TABLE IF NOT EXISTS sessions (
       id TEXT PRIMARY KEY,
@@ -160,7 +172,12 @@ function rowToUser(row) {
     subscribed: row.subscribed,
     plan: row.plan,
     subscriptionUntil: row.subscription_until,
-    createdAt: row.created_at
+    createdAt: row.created_at,
+    emailVerified: row.email_verified,
+    verifyCode: row.verify_code,
+    verifyExpires: row.verify_expires,
+    telegramChatId: row.telegram_chat_id,
+    telegramLinkCode: row.telegram_link_code
   };
 }
 
@@ -267,7 +284,9 @@ function publicUser(user) {
     role: user.role,
     subscribed: Boolean(user.subscribed),
     plan: user.plan || "",
-    subscriptionUntil: user.subscriptionUntil || ""
+    subscriptionUntil: user.subscriptionUntil || "",
+    emailVerified: Boolean(user.emailVerified),
+    telegramLinked: Boolean(user.telegramChatId)
   };
 }
 
@@ -293,6 +312,8 @@ async function signup(req, res) {
   if (existing) {
     return json(res, 409, { error: "هذا البريد مسجل بالفعل." });
   }
+  const verifyCode = String(crypto.randomInt(100000, 999999));
+  const verifyExpires = new Date(Date.now() + 15 * 60 * 1000).toISOString();
   const user = {
     id: crypto.randomUUID(),
     name: String(name).trim(),
@@ -305,12 +326,41 @@ async function signup(req, res) {
     createdAt: new Date().toISOString()
   };
   await pool.query(
-    `INSERT INTO users (id, name, email, password_hash, role, subscribed, plan, subscription_until, created_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
-    [user.id, user.name, user.email, user.passwordHash, user.role, user.subscribed, user.plan, user.subscriptionUntil, user.createdAt]
+    `INSERT INTO users (id, name, email, password_hash, role, subscribed, plan, subscription_until, created_at, verify_code, verify_expires)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+    [user.id, user.name, user.email, user.passwordHash, user.role, user.subscribed, user.plan, user.subscriptionUntil, user.createdAt, verifyCode, verifyExpires]
   );
   await createSession(res, user.id);
-  return json(res, 201, { user: publicUser(user) });
+  sendVerificationEmail(user.email, user.name, verifyCode).catch(() => {});
+  return json(res, 201, { user: publicUser({ ...user, emailVerified: false }) });
+}
+
+async function verifyEmail(req, res) {
+  const user = await authUser(req);
+  if (!user) return json(res, 401, { error: "سجل الدخول أولا." });
+  if (user.emailVerified) return json(res, 200, { user: publicUser(user) });
+  const { code } = await bodyJson(req);
+  const cleanCode = String(code || "").trim();
+  if (!user.verifyCode || !cleanCode || cleanCode !== user.verifyCode) {
+    return json(res, 400, { error: "رمز التحقق غير صحيح." });
+  }
+  if (user.verifyExpires && new Date(user.verifyExpires).getTime() < Date.now()) {
+    return json(res, 400, { error: "انتهت صلاحية الرمز، اطلب رمزا جديدا." });
+  }
+  await pool.query("UPDATE users SET email_verified = true, verify_code = NULL WHERE id = $1", [user.id]);
+  const updated = await findUserById(user.id);
+  return json(res, 200, { user: publicUser(updated) });
+}
+
+async function resendVerification(req, res) {
+  const user = await authUser(req);
+  if (!user) return json(res, 401, { error: "سجل الدخول أولا." });
+  if (user.emailVerified) return json(res, 200, { ok: true });
+  const verifyCode = String(crypto.randomInt(100000, 999999));
+  const verifyExpires = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+  await pool.query("UPDATE users SET verify_code = $1, verify_expires = $2 WHERE id = $3", [verifyCode, verifyExpires, user.id]);
+  sendVerificationEmail(user.email, user.name, verifyCode).catch(() => {});
+  return json(res, 200, { ok: true });
 }
 
 async function login(req, res) {
@@ -570,7 +620,9 @@ async function adminUsers(req, res) {
       subscribed: u.subscribed,
       plan: u.plan,
       subscriptionUntil: u.subscriptionUntil,
-      createdAt: u.createdAt
+      createdAt: u.createdAt,
+      emailVerified: Boolean(u.emailVerified),
+      telegramLinked: Boolean(u.telegramChatId)
     }))
   });
 }
@@ -1024,7 +1076,198 @@ async function fetchFearGreedIndex() {
   }
 }
 
-// ===== تتبع الصفقات والمحصول اليومي =====
+// ===== التحقق بالإيميل والإشعارات =====
+
+function fmtNum(n) {
+  const v = Number(n);
+  return v.toLocaleString("en-US", { maximumFractionDigits: v < 1 ? 6 : v < 100 ? 4 : 2 });
+}
+
+async function sendEmail(to, subject, html) {
+  const apiKey = process.env.RESEND_API_KEY;
+  if (!apiKey) {
+    console.warn("RESEND_API_KEY غير مضبوط - تم تخطي إرسال الإيميل إلى " + to);
+    return;
+  }
+  const from = process.env.RESEND_FROM_EMAIL || "SYRIA TRADING <onboarding@resend.dev>";
+  try {
+    const r = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ from, to: [to], subject, html })
+    });
+    if (!r.ok) console.error("فشل إرسال الإيميل:", await r.text());
+  } catch (e) {
+    console.error("خطأ إرسال الإيميل:", e.message);
+  }
+}
+
+async function sendVerificationEmail(email, name, code) {
+  await sendEmail(
+    email,
+    "رمز تفعيل حسابك - SYRIA TRADING",
+    `<div dir="rtl" style="font-family:Tahoma,Arial,sans-serif;text-align:right;background:#0d1117;color:#e6edf3;padding:24px">
+      <h2 style="color:#f0c76f">مرحبا ${name}</h2>
+      <p>رمز تفعيل حسابك على <b>SYRIA TRADING</b> هو:</p>
+      <p style="font-size:34px;font-weight:900;letter-spacing:6px;color:#f0c76f;direction:ltr;text-align:center">${code}</p>
+      <p>هذا الرمز صالح لمدة 15 دقيقة فقط. إذا لم تطلب هذا الرمز، تجاهل هذا الإيميل.</p>
+    </div>`
+  );
+}
+
+async function sendSignalEmail(email, name, symbol, direction, levels) {
+  const dirAr = direction === "buy" ? "شراء 🟢" : "بيع 🔴";
+  await sendEmail(
+    email,
+    `صفقة جديدة: ${symbol} — ${dirAr}`,
+    `<div dir="rtl" style="font-family:Tahoma,Arial,sans-serif;text-align:right;background:#0d1117;color:#e6edf3;padding:24px">
+      <h2 style="color:#f0c76f">صفقة جديدة على SYRIA TRADING</h2>
+      <p>مرحبا ${name}، ظهرت صفقة جديدة بتوافق قوي بين المؤشرات:</p>
+      <table style="width:100%;border-collapse:collapse;margin-top:12px">
+        <tr><td style="padding:8px;border-bottom:1px solid #2b3442">الأداة</td><td style="padding:8px;border-bottom:1px solid #2b3442;font-weight:900">${symbol}</td></tr>
+        <tr><td style="padding:8px;border-bottom:1px solid #2b3442">الاتجاه</td><td style="padding:8px;border-bottom:1px solid #2b3442;font-weight:900">${dirAr}</td></tr>
+        <tr><td style="padding:8px;border-bottom:1px solid #2b3442">الدخول</td><td style="padding:8px;border-bottom:1px solid #2b3442;direction:ltr">${fmtNum(levels.entry)}</td></tr>
+        <tr><td style="padding:8px;border-bottom:1px solid #2b3442">وقف الخسارة</td><td style="padding:8px;border-bottom:1px solid #2b3442;direction:ltr">${fmtNum(levels.stopLoss)}</td></tr>
+        <tr><td style="padding:8px;border-bottom:1px solid #2b3442">هدف 1</td><td style="padding:8px;border-bottom:1px solid #2b3442;direction:ltr">${fmtNum(levels.takeProfit1)}</td></tr>
+        <tr><td style="padding:8px;border-bottom:1px solid #2b3442">هدف 2</td><td style="padding:8px;border-bottom:1px solid #2b3442;direction:ltr">${fmtNum(levels.takeProfit2)}</td></tr>
+        <tr><td style="padding:8px">هدف 3</td><td style="padding:8px;direction:ltr">${fmtNum(levels.takeProfit3)}</td></tr>
+      </table>
+      <p style="margin-top:16px"><a href="${APP_URL}" style="color:#f0c76f">افتح الموقع لمتابعة الصفقة على الشارت</a></p>
+    </div>`
+  ).catch(() => {});
+}
+
+async function sendTelegramMessage(chatId, text) {
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  if (!token) return;
+  try {
+    const r = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chat_id: chatId, text, parse_mode: "HTML" })
+    });
+    if (!r.ok) console.error("فشل إرسال رسالة تلغرام:", await r.text());
+  } catch (e) {
+    console.error("خطأ إرسال رسالة تلغرام:", e.message);
+  }
+}
+
+async function telegramLinkInfo(req, res) {
+  const user = await authUser(req);
+  if (!user) return json(res, 401, { error: "سجل الدخول أولا." });
+  let code = user.telegramLinkCode;
+  if (!user.telegramChatId && !code) {
+    code = crypto.randomBytes(4).toString("hex").toUpperCase();
+    await pool.query("UPDATE users SET telegram_link_code = $1 WHERE id = $2", [code, user.id]);
+  }
+  const botUsername = process.env.TELEGRAM_BOT_USERNAME || "";
+  return json(res, 200, {
+    linked: Boolean(user.telegramChatId),
+    code: user.telegramChatId ? null : code,
+    botUsername,
+    deepLink: botUsername && !user.telegramChatId ? `https://t.me/${botUsername}?start=${code}` : null
+  });
+}
+
+async function telegramWebhook(req, res) {
+  try {
+    const update = await bodyJson(req);
+    const msg = update.message;
+    if (msg && msg.chat && msg.text) {
+      const chatId = String(msg.chat.id);
+      const text = String(msg.text).trim();
+      let code = null;
+      if (text.startsWith("/start")) {
+        const parts = text.split(" ");
+        code = parts[1] ? parts[1].trim().toUpperCase() : null;
+      } else if (/^[A-F0-9]{6,10}$/i.test(text)) {
+        code = text.toUpperCase();
+      }
+      if (code) {
+        const { rows } = await pool.query("SELECT id, name FROM users WHERE telegram_link_code = $1", [code]);
+        if (rows[0]) {
+          await pool.query("UPDATE users SET telegram_chat_id = $1, telegram_link_code = NULL WHERE id = $2", [chatId, rows[0].id]);
+          await sendTelegramMessage(chatId, `تم ربط حسابك بنجاح يا ${rows[0].name}! ✅\nرح توصلك كل صفقات SYRIA TRADING هون مباشرة أول ما تظهر.`);
+        } else {
+          await sendTelegramMessage(chatId, "الرمز غير صحيح أو منتهي الصلاحية. تأكد إنك نسخته صح من موقعك.");
+        }
+      } else if (text === "/start") {
+        await sendTelegramMessage(chatId, "أهلا بك في بوت SYRIA TRADING! ادخل لموقعك وافتح صفحة ربط تلغرام لتحصل على رمز الربط.");
+      }
+    }
+  } catch (e) {
+    console.error("خطأ webhook تلغرام:", e.message);
+  }
+  return json(res, 200, { ok: true });
+}
+
+async function notifySubscribers(symbol, direction, levels) {
+  try {
+    const { rows } = await pool.query("SELECT email, name, telegram_chat_id FROM users WHERE subscribed = true");
+    for (const u of rows) {
+      if (u.telegram_chat_id) {
+        const dirAr = direction === "buy" ? "شراء 🟢" : "بيع 🔴";
+        const text = `<b>صفقة جديدة SYRIA TRADING</b>\n${symbol} — ${dirAr}\n\nالدخول: <code>${fmtNum(levels.entry)}</code>\nوقف الخسارة: <code>${fmtNum(levels.stopLoss)}</code>\nهدف 1: <code>${fmtNum(levels.takeProfit1)}</code>\nهدف 2: <code>${fmtNum(levels.takeProfit2)}</code>\nهدف 3: <code>${fmtNum(levels.takeProfit3)}</code>`;
+        sendTelegramMessage(u.telegram_chat_id, text).catch(() => {});
+      } else if (u.email) {
+        sendSignalEmail(u.email, u.name, symbol, direction, levels).catch(() => {});
+      }
+    }
+  } catch (e) {
+    console.error("خطأ إرسال إشعارات الصفقة:", e.message);
+  }
+}
+
+async function liveStream(req, res, url) {
+  const symbol = String(url.searchParams.get("symbol") || "").toUpperCase();
+  const interval = String(url.searchParams.get("interval") || "1h");
+  if (!/^[A-Z0-9]{5,20}$/.test(symbol) || !/^(1m|5m|15m|30m|1h|4h|1d|1w)$/.test(interval)) {
+    res.writeHead(400, { "Content-Type": "text/plain; charset=utf-8" });
+    return res.end("bad request");
+  }
+  res.writeHead(200, {
+    "Content-Type": "text/event-stream; charset=utf-8",
+    "Cache-Control": "no-cache, no-transform",
+    "Connection": "keep-alive",
+    "X-Accel-Buffering": "no",
+    ...corsHeaders()
+  });
+  res.write(":ok\n\n");
+
+  let closed = false;
+  let upstream = null;
+
+  function connectUpstream() {
+    if (closed) return;
+    try {
+      upstream = new WebSocket(`wss://stream.binance.com:9443/ws/${symbol.toLowerCase()}@kline_${interval}`);
+      upstream.on("message", raw => {
+        try {
+          const msg = JSON.parse(raw.toString());
+          const k = msg.k;
+          if (!k) return;
+          const payload = { time: Math.floor(k.t / 1000), open: Number(k.o), high: Number(k.h), low: Number(k.l), close: Number(k.c) };
+          res.write(`data: ${JSON.stringify(payload)}\n\n`);
+        } catch {}
+      });
+      upstream.on("close", () => { if (!closed) setTimeout(connectUpstream, 3000); });
+      upstream.on("error", () => { try { upstream.close(); } catch {} });
+    } catch {
+      if (!closed) setTimeout(connectUpstream, 3000);
+    }
+  }
+  connectUpstream();
+
+  const pingInterval = setInterval(() => { try { res.write(":ping\n\n"); } catch {} }, 20000);
+
+  req.on("close", () => {
+    closed = true;
+    clearInterval(pingInterval);
+    if (upstream) { try { upstream.close(); } catch {} }
+  });
+}
+
+
 
 async function fetchCurrentPriceOnly(symbol, provider) {
   try {
@@ -1058,6 +1301,7 @@ async function logTradeSignal(symbol, provider, direction, levels) {
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'open',$10)`,
       [crypto.randomUUID(), symbol, provider, direction, levels.entry, levels.stopLoss, levels.takeProfit1, levels.takeProfit2, levels.takeProfit3, new Date().toISOString()]
     );
+    notifySubscribers(symbol, direction, levels).catch(() => {});
   } catch (e) {
     console.error("تعذر تسجيل الصفقة:", e.message);
   }
@@ -1091,6 +1335,17 @@ async function checkOpenSignals() {
   } catch (e) {
     console.error("خطأ أثناء فحص الصفقات المفتوحة:", e.message);
   }
+}
+
+async function priceTick(req, res, url) {
+  const user = await authUser(req);
+  if (!user) return json(res, 401, { error: "سجل الدخول أولا." });
+  const symbol = url.searchParams.get("symbol");
+  const provider = url.searchParams.get("provider") === "yahoo" ? "yahoo" : "binance";
+  if (!symbol) return json(res, 400, { error: "الرمز مطلوب." });
+  const price = await fetchCurrentPriceOnly(symbol, provider);
+  if (price == null) return json(res, 502, { error: "تعذر جلب السعر." });
+  return json(res, 200, { price, time: Math.floor(Date.now() / 1000) });
 }
 
 async function dailyResults(req, res) {
