@@ -51,8 +51,6 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "POST" && url.pathname === "/api/signup") return signup(req, res);
     if (req.method === "POST" && url.pathname === "/api/verify-email") return verifyEmail(req, res);
     if (req.method === "POST" && url.pathname === "/api/resend-verification") return resendVerification(req, res);
-    if (req.method === "GET" && url.pathname === "/api/telegram/link-info") return telegramLinkInfo(req, res);
-    if (req.method === "POST" && url.pathname === "/api/telegram/webhook") return telegramWebhook(req, res);
     if (req.method === "POST" && url.pathname === "/api/login") return login(req, res);
     if (req.method === "POST" && url.pathname === "/api/logout") return logout(res);
     if (req.method === "GET" && url.pathname === "/api/me") return me(req, res);
@@ -1115,109 +1113,6 @@ async function sendVerificationEmail(email, name, code) {
   );
 }
 
-async function sendSignalEmail(email, name, symbol, direction, levels) {
-  const dirAr = direction === "buy" ? "شراء 🟢" : "بيع 🔴";
-  await sendEmail(
-    email,
-    `صفقة جديدة: ${symbol} — ${dirAr}`,
-    `<div dir="rtl" style="font-family:Tahoma,Arial,sans-serif;text-align:right;background:#0d1117;color:#e6edf3;padding:24px">
-      <h2 style="color:#f0c76f">صفقة جديدة على SYRIA TRADING</h2>
-      <p>مرحبا ${name}، ظهرت صفقة جديدة بتوافق قوي بين المؤشرات:</p>
-      <table style="width:100%;border-collapse:collapse;margin-top:12px">
-        <tr><td style="padding:8px;border-bottom:1px solid #2b3442">الأداة</td><td style="padding:8px;border-bottom:1px solid #2b3442;font-weight:900">${symbol}</td></tr>
-        <tr><td style="padding:8px;border-bottom:1px solid #2b3442">الاتجاه</td><td style="padding:8px;border-bottom:1px solid #2b3442;font-weight:900">${dirAr}</td></tr>
-        <tr><td style="padding:8px;border-bottom:1px solid #2b3442">الدخول</td><td style="padding:8px;border-bottom:1px solid #2b3442;direction:ltr">${fmtNum(levels.entry)}</td></tr>
-        <tr><td style="padding:8px;border-bottom:1px solid #2b3442">وقف الخسارة</td><td style="padding:8px;border-bottom:1px solid #2b3442;direction:ltr">${fmtNum(levels.stopLoss)}</td></tr>
-        <tr><td style="padding:8px;border-bottom:1px solid #2b3442">هدف 1</td><td style="padding:8px;border-bottom:1px solid #2b3442;direction:ltr">${fmtNum(levels.takeProfit1)}</td></tr>
-        <tr><td style="padding:8px;border-bottom:1px solid #2b3442">هدف 2</td><td style="padding:8px;border-bottom:1px solid #2b3442;direction:ltr">${fmtNum(levels.takeProfit2)}</td></tr>
-        <tr><td style="padding:8px">هدف 3</td><td style="padding:8px;direction:ltr">${fmtNum(levels.takeProfit3)}</td></tr>
-      </table>
-      <p style="margin-top:16px"><a href="${APP_URL}" style="color:#f0c76f">افتح الموقع لمتابعة الصفقة على الشارت</a></p>
-    </div>`
-  ).catch(() => {});
-}
-
-async function sendTelegramMessage(chatId, text) {
-  const token = process.env.TELEGRAM_BOT_TOKEN;
-  if (!token) return;
-  try {
-    const r = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ chat_id: chatId, text, parse_mode: "HTML" })
-    });
-    if (!r.ok) console.error("فشل إرسال رسالة تلغرام:", await r.text());
-  } catch (e) {
-    console.error("خطأ إرسال رسالة تلغرام:", e.message);
-  }
-}
-
-async function telegramLinkInfo(req, res) {
-  const user = await authUser(req);
-  if (!user) return json(res, 401, { error: "سجل الدخول أولا." });
-  let code = user.telegramLinkCode;
-  if (!user.telegramChatId && !code) {
-    code = crypto.randomBytes(4).toString("hex").toUpperCase();
-    await pool.query("UPDATE users SET telegram_link_code = $1 WHERE id = $2", [code, user.id]);
-  }
-  const botUsername = process.env.TELEGRAM_BOT_USERNAME || "";
-  return json(res, 200, {
-    linked: Boolean(user.telegramChatId),
-    code: user.telegramChatId ? null : code,
-    botUsername,
-    deepLink: botUsername && !user.telegramChatId ? `https://t.me/${botUsername}?start=${code}` : null
-  });
-}
-
-async function telegramWebhook(req, res) {
-  try {
-    const update = await bodyJson(req);
-    const msg = update.message;
-    if (msg && msg.chat && msg.text) {
-      const chatId = String(msg.chat.id);
-      const text = String(msg.text).trim();
-      let code = null;
-      if (text.startsWith("/start")) {
-        const parts = text.split(" ");
-        code = parts[1] ? parts[1].trim().toUpperCase() : null;
-      } else if (/^[A-F0-9]{6,10}$/i.test(text)) {
-        code = text.toUpperCase();
-      }
-      if (code) {
-        const { rows } = await pool.query("SELECT id, name FROM users WHERE telegram_link_code = $1", [code]);
-        if (rows[0]) {
-          await pool.query("UPDATE users SET telegram_chat_id = $1, telegram_link_code = NULL WHERE id = $2", [chatId, rows[0].id]);
-          await sendTelegramMessage(chatId, `تم ربط حسابك بنجاح يا ${rows[0].name}! ✅\nرح توصلك كل صفقات SYRIA TRADING هون مباشرة أول ما تظهر.`);
-        } else {
-          await sendTelegramMessage(chatId, "الرمز غير صحيح أو منتهي الصلاحية. تأكد إنك نسخته صح من موقعك.");
-        }
-      } else if (text === "/start") {
-        await sendTelegramMessage(chatId, "أهلا بك في بوت SYRIA TRADING! ادخل لموقعك وافتح صفحة ربط تلغرام لتحصل على رمز الربط.");
-      }
-    }
-  } catch (e) {
-    console.error("خطأ webhook تلغرام:", e.message);
-  }
-  return json(res, 200, { ok: true });
-}
-
-async function notifySubscribers(symbol, direction, levels) {
-  try {
-    const { rows } = await pool.query("SELECT email, name, telegram_chat_id FROM users WHERE subscribed = true");
-    for (const u of rows) {
-      if (u.telegram_chat_id) {
-        const dirAr = direction === "buy" ? "شراء 🟢" : "بيع 🔴";
-        const text = `<b>صفقة جديدة SYRIA TRADING</b>\n${symbol} — ${dirAr}\n\nالدخول: <code>${fmtNum(levels.entry)}</code>\nوقف الخسارة: <code>${fmtNum(levels.stopLoss)}</code>\nهدف 1: <code>${fmtNum(levels.takeProfit1)}</code>\nهدف 2: <code>${fmtNum(levels.takeProfit2)}</code>\nهدف 3: <code>${fmtNum(levels.takeProfit3)}</code>`;
-        sendTelegramMessage(u.telegram_chat_id, text).catch(() => {});
-      } else if (u.email) {
-        sendSignalEmail(u.email, u.name, symbol, direction, levels).catch(() => {});
-      }
-    }
-  } catch (e) {
-    console.error("خطأ إرسال إشعارات الصفقة:", e.message);
-  }
-}
-
 async function liveStream(req, res, url) {
   const symbol = String(url.searchParams.get("symbol") || "").toUpperCase();
   const interval = String(url.searchParams.get("interval") || "1h");
@@ -1240,7 +1135,8 @@ async function liveStream(req, res, url) {
   function connectUpstream() {
     if (closed) return;
     try {
-      upstream = new WebSocket(`wss://stream.binance.com:9443/ws/${symbol.toLowerCase()}@kline_${interval}`);
+      const wsBase = process.env.BINANCE_WS_BASE || "wss://stream.binance.com:9443";
+      upstream = new WebSocket(`${wsBase}/ws/${symbol.toLowerCase()}@kline_${interval}`);
       upstream.on("message", raw => {
         try {
           const msg = JSON.parse(raw.toString());
@@ -1301,7 +1197,7 @@ async function logTradeSignal(symbol, provider, direction, levels) {
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'open',$10)`,
       [crypto.randomUUID(), symbol, provider, direction, levels.entry, levels.stopLoss, levels.takeProfit1, levels.takeProfit2, levels.takeProfit3, new Date().toISOString()]
     );
-    notifySubscribers(symbol, direction, levels).catch(() => {});
+    // ملاحظة: إشعارات تلغرام/الإيميل معطّلة حاليًا بطلب صاحب الموقع
   } catch (e) {
     console.error("تعذر تسجيل الصفقة:", e.message);
   }

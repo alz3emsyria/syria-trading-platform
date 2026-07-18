@@ -85,7 +85,6 @@
   </header>
 
   <main>
-    <div id="telegramBox" class="dailyBox hidden"></div>
     <section class="hero">
       <div>
         <h1>شارت حي وتحليل دخول وأهداف للأعضاء فقط</h1>
@@ -141,7 +140,7 @@
     const API_BASE=location.protocol==="file:"?"http://localhost:3000":"";
     const api=(url,body)=>fetch(API_BASE+url,{method:body?"POST":"GET",headers:{"Content-Type":"application/json"},credentials:"include",body:body?JSON.stringify(body):undefined}).then(async r=>{const d=await r.json();if(!r.ok)throw new Error(d.error||"تعذر تنفيذ الطلب");return d});
     function showAuth(name){["loginView","signupView","verifyView","subscribeView"].forEach(id=>$(id).classList.toggle("hidden",id!==name))}
-    function enter(user){currentUser=user;$("gate").classList.add("hidden");$("memberGreeting").textContent=user.name;$("adminLink").classList.toggle("hidden",user.role!=="admin");loadTelegramBox()}
+    function enter(user){currentUser=user;$("gate").classList.add("hidden");$("memberGreeting").textContent=user.name;$("adminLink").classList.toggle("hidden",user.role!=="admin")}
     function routeUser(user){
       currentUser=user;
       if(user.role==="admin"){enter(user);return}
@@ -159,19 +158,6 @@
     $("verifyBackToLogin").onclick=async e=>{e.preventDefault();await api("/api/logout",{});$("verifyCode").value="";$("verifyErr").textContent="";showAuth("loginView")};
     $("logoutBtn").onclick=async()=>{await api("/api/logout",{});location.reload()};
     async function boot(){const d=await api("/api/me"); if(!d.user){$("gate").classList.remove("hidden");return} routeUser(d.user)}
-    async function loadTelegramBox(){
-      try{
-        const d=await api("/api/telegram/link-info");
-        if(d.linked){
-          $("telegramBox").innerHTML='<h4>🔔 التنبيهات</h4><p class="sub" style="text-align:center">تلغرام مربوط ✅ — رح توصلك الصفقات فور ظهورها.</p>';
-        }else if(d.botUsername){
-          $("telegramBox").innerHTML=`<h4>🔔 فعّل تنبيهات تلغرام</h4><p class="sub" style="text-align:center">اضغط الزر وابعت أي رسالة للبوت ليتفعل الربط تلقائيا.</p><a class="btn primary full" href="${d.deepLink}" target="_blank" rel="noopener">ربط حساب تلغرام</a>`;
-        }else{
-          $("telegramBox").innerHTML='<h4>🔔 التنبيهات</h4><p class="sub" style="text-align:center">تنبيهات تلغرام غير مفعلة حاليا من إدارة الموقع.</p>';
-        }
-        $("telegramBox").classList.remove("hidden");
-      }catch(e){}
-    }
     async function loadDailyResults(){
       try{
         const d=await api("/api/daily-results");
@@ -215,6 +201,7 @@
     function renderLiveChart(d){
       ensureLiveChart();
       candleSeries.setData(d.candles);
+      lastCandle=d.candles.length?{...d.candles[d.candles.length-1]}:null;
       clearChartLines();
       if(d.levels){
         addChartLine(d.levels.entry,"#f0c76f","دخول");
@@ -244,27 +231,39 @@
       $("decision").innerHTML=`<div class="note"><h2 class="${color}">${d.verdict}</h2><p>قوة الإشارة: <b class="mono">${d.confidencePct}%</b> (${d.signals.length} مؤشرات مجتمعة)</p></div><div class="indicator"><div class="mini"><span>RSI</span><b>${d.indicators.rsi.toFixed(1)}</b></div>${stochRow}<div class="mini"><span>ATR</span><b>${fp(d.indicators.atr)}</b></div><div class="mini"><span>EMA20</span><b>${fp(d.indicators.ema20)}</b></div><div class="mini"><span>EMA50</span><b>${fp(d.indicators.ema50)}</b></div>${bbRow}${htfRow}${fngRow}</div><div style="margin-top:14px;border-top:1px solid var(--line);padding-top:8px">${smcLines.join("")}</div>`;
       if(!d.levels){$("levels").innerHTML='<div class="note">لا توجد صفقة كافية القوة حاليا. النظام يرفض الدخول إلا بتوافق قوي جدا بين المؤشرات لتقليل الصفقات الخاسرة.</div>';return}
       $("levels").innerHTML=`<div class="sub" style="margin-bottom:8px">نسبة المخاطرة/العائد: <b class="mono ok">${d.levels.riskReward}</b> — وقف الخسارة مبني على هيكل السوق الفعلي</div>`+[["الدخول",d.levels.entry],["وقف الخسارة",d.levels.stopLoss],["الهدف الأول",d.levels.takeProfit1],["الهدف الثاني",d.levels.takeProfit2],["الهدف الثالث",d.levels.takeProfit3],["Pivot",d.pivots.pivot],["أعلى سعر حديث",d.pivots.swingHigh],["أدنى سعر حديث",d.pivots.swingLow]].map(x=>`<div class="level"><span>${x[0]}</span><b class="mono">${fp(x[1])}</b></div>`).join("")+'<p class="sub" style="margin-top:10px">كل هذه المستويات مرسومة مباشرة كخطوط على الشارت أعلاه.</p>'}
-    let liveSource=null, liveTimer=null;
-    function stopLiveFeed(){if(liveSource){try{liveSource.close()}catch(e){}liveSource=null}if(liveTimer){clearInterval(liveTimer);liveTimer=null}$("liveBadge").classList.add("hidden")}
+    let liveSource=null, liveTimer=null, priceTimer=null, lastCandle=null;
+    function stopLiveFeed(){if(liveSource){try{liveSource.close()}catch(e){}liveSource=null}if(liveTimer){clearInterval(liveTimer);liveTimer=null}if(priceTimer){clearInterval(priceTimer);priceTimer=null}lastCandle=null;$("liveBadge").classList.add("hidden")}
+    function applyTick(price){
+      if(!candleSeries||!lastCandle||price==null||isNaN(price))return;
+      lastCandle={...lastCandle,close:price,high:Math.max(lastCandle.high,price),low:Math.min(lastCandle.low,price)};
+      candleSeries.update(lastCandle);
+      $("liveBadgeText").textContent="مباشر — آخر سعر "+fp(price);
+    }
+    async function pollPrice(meta){
+      try{
+        const params=new URLSearchParams({symbol:meta[2],provider:meta[3]||"binance"});
+        const r=await fetch(API_BASE+"/api/price?"+params,{credentials:"include"});
+        const d=await r.json();
+        if(r.ok)applyTick(Number(d.price));
+      }catch(e){}
+    }
     function startLiveFeed(meta,tf){
       stopLiveFeed();
       const symbol=meta[2],provider=meta[3]||"binance";
       if(!symbol)return;
       $("liveBadge").classList.remove("hidden");
+      $("liveBadgeText").textContent="مباشر";
       if(provider==="binance"){
-        $("liveBadgeText").textContent="مباشر (بث لحظي)";
         try{
           liveSource=new EventSource(API_BASE+"/api/live-stream?symbol="+encodeURIComponent(symbol)+"&interval="+encodeURIComponent(tf[3]));
           liveSource.onmessage=ev=>{
-            try{const k=JSON.parse(ev.data);if(!candleSeries)return;candleSeries.update(k);$("liveBadgeText").textContent="مباشر — آخر سعر "+fp(k.close)}catch(e){}
+            try{const k=JSON.parse(ev.data);if(!candleSeries)return;lastCandle=k;candleSeries.update(k);$("liveBadgeText").textContent="مباشر — آخر سعر "+fp(k.close)}catch(e){}
           };
-          liveSource.onerror=()=>{$("liveBadgeText").textContent="إعادة الاتصال..."};
         }catch(e){}
-        liveTimer=setInterval(()=>refreshAnalysis(meta,tf),60000);
-      }else{
-        $("liveBadgeText").textContent="تحديث كل 30 ثانية";
-        liveTimer=setInterval(()=>refreshAnalysis(meta,tf),30000);
       }
+      // نبض سعر احتياطي: يضمن تحرك الشارت باستمرار حتى لو تأخر البث المباشر لأي سبب
+      priceTimer=setInterval(()=>pollPrice(meta),provider==="binance"?3000:8000);
+      liveTimer=setInterval(()=>refreshAnalysis(meta,tf),60000);
     }
     async function refreshAnalysis(meta,tf){
       try{const d=await api("/api/analyze",{symbol:meta[2],provider:meta[3]||"binance",interval:tf[3]});renderLiveChart(d);renderAnalysis(d)}catch(e){}
