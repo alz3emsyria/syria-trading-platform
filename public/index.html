@@ -8,22 +8,38 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@500;700;900&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
   <style>
-    :root{--bg:#090d12;--panel:#121821;--panel2:#18202b;--line:#2b3442;--gold:#d7a84f;--gold2:#f0c76f;--green:#28d79c;--red:#ff5874;--text:#edf1f6;--muted:#9aa6b7}
-    *{box-sizing:border-box} body{margin:0;background:linear-gradient(140deg,#090d12,#111722 45%,#0b1117);color:var(--text);font-family:"IBM Plex Sans Arabic",sans-serif;min-height:100vh} a{color:inherit}.mono{font-family:"JetBrains Mono",monospace;direction:ltr;unicode-bidi:isolate}.hidden{display:none!important}
-    .gate{position:fixed;inset:0;z-index:10;display:grid;place-items:center;padding:20px;background:rgba(7,10,14,.96)}
-    .auth{width:min(440px,100%);background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:26px;box-shadow:0 24px 80px rgba(0,0,0,.32)}
-    .brand{display:flex;align-items:center;justify-content:center;gap:12px;margin-bottom:20px}.mark{width:42px;height:42px;border-radius:8px;background:linear-gradient(145deg,var(--gold2),var(--gold));display:grid;place-items:center;color:#171100;font-weight:900}.brand b{font-family:Cairo,sans-serif;font-size:20px}.brand span{display:block;color:var(--gold2);font-size:12px}
-    h1,h2,h3{font-family:Cairo,sans-serif;margin:0}.auth h2{text-align:center;font-size:22px}.auth p{text-align:center;color:var(--muted);margin:6px 0 18px;font-size:14px}
-    input,select{width:100%;background:var(--panel2);border:1px solid var(--line);color:var(--text);border-radius:8px;padding:13px 14px;font:inherit;margin:8px 0}input:focus,select:focus{outline:none;border-color:var(--gold)}
-    button,.btn{border:0;border-radius:8px;padding:12px 18px;font:inherit;font-weight:800;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;gap:8px}.primary{background:linear-gradient(145deg,var(--gold2),var(--gold));color:#171100}.ghost{background:transparent;color:var(--text);border:1px solid var(--line)}.danger{color:var(--red);cursor:pointer}.full{width:100%}.switch{display:block;margin-top:14px;text-align:center;color:var(--gold2);font-weight:700}.err{min-height:22px;color:var(--red);font-weight:700;font-size:13px}.plans{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:12px 0}.plan{border:1px solid var(--line);border-radius:8px;padding:14px;cursor:pointer;background:var(--panel2)}.plan.active{border-color:var(--gold);box-shadow:0 0 0 1px var(--gold) inset}.price{font-size:24px;font-weight:900;color:var(--gold2);direction:ltr}
-    #telegramBtn{margin-top:6px}.tinyNote{text-align:center;color:var(--muted);font-size:12px;margin:8px 0}#subscribeBtn{margin-top:4px}
-    header{position:sticky;top:0;z-index:5;background:rgba(9,13,18,.9);backdrop-filter:blur(12px);border-bottom:1px solid var(--line)}.top{max-width:1240px;margin:auto;padding:13px 20px;display:flex;justify-content:space-between;align-items:center;gap:14px}.nav{display:flex;gap:18px;align-items:center;color:var(--muted);font-size:14px}.nav a{text-decoration:none}.member{color:var(--gold2);font-weight:800}
-    main{max-width:1240px;margin:auto;padding:28px 20px 70px}.hero{display:grid;grid-template-columns:1.05fr .95fr;gap:24px;align-items:center;margin:18px 0 28px}.hero h1{font-size:clamp(30px,5vw,54px);line-height:1.18}.hero p{color:var(--muted);font-size:16px;max-width:620px}.visual{min-height:260px;border:1px solid var(--line);border-radius:8px;background:linear-gradient(150deg,#151c26,#0e141c);display:grid;place-items:center;overflow:hidden}.visual svg{width:92%;height:220px}
-    .panel,.card{background:var(--panel);border:1px solid var(--line);border-radius:8px}.panel{padding:18px}.grid{display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:12px;align-items:end}.field label{display:block;color:var(--muted);font-size:13px;font-weight:700}.ticker{height:46px;border-top:1px solid var(--line)}
-    #results{margin-top:20px}.chart{height:720px;position:relative}.chart-head{display:flex;justify-content:space-between;align-items:center;padding:14px 18px;border-bottom:1px solid var(--line)}.liveBadge{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)}.liveDot{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 0 0 rgba(40,215,156,.6);animation:pulse 1.6s infinite}@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(40,215,156,.55)}70%{box-shadow:0 0 0 8px rgba(40,215,156,0)}100%{box-shadow:0 0 0 0 rgba(40,215,156,0)}}
-    .cards{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px}.card{padding:18px}.card.full{grid-column:1/-1}.sub{color:var(--muted);font-size:13px;margin-top:4px}.level{display:flex;justify-content:space-between;border-bottom:1px solid var(--line);padding:10px 0}.level:last-child{border-bottom:0}.ok{color:var(--green)}.bad{color:var(--red)}.note{background:#1b2430;border:1px solid var(--line);border-radius:8px;padding:14px;color:var(--muted)}.indicator{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:12px}.mini{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:10px}.mini span{display:block;color:var(--muted);font-size:12px}.mini b{font-family:"JetBrains Mono";direction:ltr}.loader{color:var(--muted);padding:16px}.smcLine{display:flex;justify-content:space-between;padding:6px 0;font-size:13px;color:var(--muted)}.smcLine b{color:var(--text)}
-    .dailyBox{margin-top:18px;padding:16px;background:var(--panel2);border:1px solid var(--line);border-radius:8px}.dailyBox h4{margin:0 0 10px;font-family:Cairo,sans-serif;text-align:center;color:var(--gold2);font-size:14px}.dailyStats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}.dailyStats div{text-align:center}.dailyStats b{display:block;font-size:18px;font-family:"JetBrains Mono"}.dailyStats span{color:var(--muted);font-size:11px}
-    @media(max-width:860px){.hero,.grid,.cards{grid-template-columns:1fr}.nav{flex-wrap:wrap;justify-content:flex-end}.chart{height:480px}.indicator{grid-template-columns:1fr 1fr}.dailyStats{grid-template-columns:1fr 1fr}}
+    :root{--bg:#0a0e13;--bg2:#0d131c;--panel:#121821;--panel2:#171f2a;--line:#242e3d;--gold:#b8935a;--gold2:#e0bb7c;--green:#1fb87a;--red:#e2465c;--text:#eef2f7;--muted:#8b96a8}
+    *{box-sizing:border-box} body{margin:0;background:radial-gradient(1200px 700px at 85% -10%,#141c28,transparent),linear-gradient(160deg,var(--bg),var(--bg2) 55%,#0a0f16);color:var(--text);font-family:"IBM Plex Sans Arabic",sans-serif;min-height:100vh;-webkit-font-smoothing:antialiased} a{color:inherit}.mono{font-family:"JetBrains Mono",monospace;direction:ltr;unicode-bidi:isolate}.hidden{display:none!important}
+    ::selection{background:var(--gold);color:#171100}
+    :focus-visible{outline:2px solid var(--gold2);outline-offset:2px}
+    @media(prefers-reduced-motion: reduce){*{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important}}
+    .gate{position:fixed;inset:0;z-index:10;display:grid;place-items:center;padding:20px;background:rgba(6,8,11,.97);backdrop-filter:blur(6px)}
+    .auth{width:min(440px,100%);background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:30px;box-shadow:0 30px 90px rgba(0,0,0,.45)}
+    .brand{display:flex;align-items:center;justify-content:center;gap:12px;margin-bottom:22px}.mark{width:44px;height:44px;border-radius:10px;background:linear-gradient(155deg,var(--gold2),var(--gold));display:grid;place-items:center;color:#171100;font-weight:900;font-family:Cairo,sans-serif;box-shadow:0 6px 18px rgba(184,147,90,.28)}.brand b{font-family:Cairo,sans-serif;font-size:21px;letter-spacing:.3px}.brand span{display:block;color:var(--gold2);font-size:11.5px;letter-spacing:.4px}
+    h1,h2,h3{font-family:Cairo,sans-serif;margin:0}.auth h2{text-align:center;font-size:22px;font-weight:800}.auth p{text-align:center;color:var(--muted);margin:7px 0 20px;font-size:14px;line-height:1.6}
+    input,select{width:100%;background:var(--panel2);border:1px solid var(--line);color:var(--text);border-radius:9px;padding:13px 14px;font:inherit;margin:8px 0;transition:border-color .15s}input:focus,select:focus{outline:none;border-color:var(--gold)}input::placeholder{color:#5c687a}
+    button,.btn{border:0;border-radius:9px;padding:13px 18px;font:inherit;font-weight:800;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;gap:8px;transition:transform .12s,box-shadow .12s}.primary{background:linear-gradient(155deg,var(--gold2),var(--gold));color:#171100;box-shadow:0 8px 22px rgba(184,147,90,.22)}.primary:hover{transform:translateY(-1px);box-shadow:0 10px 26px rgba(184,147,90,.32)}.ghost{background:transparent;color:var(--text);border:1px solid var(--line)}.danger{color:var(--red);cursor:pointer}.full{width:100%}.switch{display:block;margin-top:14px;text-align:center;color:var(--gold2);font-weight:700;font-size:14px}.err{min-height:22px;color:var(--red);font-weight:700;font-size:13px}.plans{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:12px 0}.plan{border:1px solid var(--line);border-radius:9px;padding:14px;cursor:pointer;background:var(--panel2)}.plan.active{border-color:var(--gold);box-shadow:0 0 0 1px var(--gold) inset}.price{font-size:24px;font-weight:900;color:var(--gold2);direction:ltr}
+    .tinyNote{text-align:center;color:var(--muted);font-size:12px;margin:8px 0}#subscribeBtn{margin-top:4px}
+    header{position:sticky;top:0;z-index:5;background:rgba(10,14,19,.88);backdrop-filter:blur(14px);border-bottom:1px solid var(--line)}.top{max-width:1240px;margin:auto;padding:14px 20px;display:flex;justify-content:space-between;align-items:center;gap:14px}.nav{display:flex;gap:20px;align-items:center;color:var(--muted);font-size:14px}.nav a{text-decoration:none;transition:color .15s}.nav a:hover{color:var(--gold2)}.member{color:var(--gold2);font-weight:800}
+    main{max-width:1240px;margin:auto;padding:0 20px 70px}
+    .hero{display:grid;grid-template-columns:1.05fr .95fr;gap:36px;align-items:center;margin:34px 0 30px}
+    .eyebrow{display:inline-flex;align-items:center;gap:8px;color:var(--gold2);font-size:12.5px;font-weight:700;letter-spacing:.3px;margin-bottom:14px}.eyebrow::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--green);box-shadow:0 0 0 3px rgba(31,184,122,.18)}
+    .hero h1{font-size:clamp(30px,4.6vw,50px);line-height:1.2;font-weight:800}.hero p{color:var(--muted);font-size:16px;max-width:600px;line-height:1.75;margin:16px 0 22px}
+    .trustbar{display:flex;flex-wrap:wrap;gap:10px;margin-top:22px}.trustbar span{background:var(--panel2);border:1px solid var(--line);border-radius:100px;padding:7px 14px;font-size:12.5px;color:var(--muted)}.trustbar b{color:var(--text)}
+    .visual{min-height:280px;border:1px solid var(--line);border-radius:14px;background:linear-gradient(165deg,#151d29,#0d1219);display:flex;align-items:flex-end;overflow:hidden;padding:26px 22px 0;position:relative}
+    .visual::before{content:"مباشر";position:absolute;top:14px;left:16px;font-size:11px;color:var(--green);font-weight:700;display:flex;align-items:center;gap:5px}
+    .candles{display:flex;align-items:flex-end;gap:5px;width:100%;height:230px}.candles i{flex:1;display:block;border-radius:2px;transform-origin:bottom;animation:grow .9s cubic-bezier(.2,.8,.2,1) backwards}
+    .candles i.up{background:linear-gradient(180deg,var(--green),#0f7a52)}.candles i.down{background:linear-gradient(180deg,var(--red),#9c2233)}
+    @keyframes grow{from{transform:scaleY(0)}to{transform:scaleY(1)}}
+    .pulse-strip{display:flex;gap:3px;height:34px;margin:26px 0;opacity:.55;overflow:hidden}.pulse-strip i{flex:0 0 5px;border-radius:1px;align-self:center}.pulse-strip i.up{background:var(--green)}.pulse-strip i.down{background:var(--red)}
+    .panel,.card{background:var(--panel);border:1px solid var(--line);border-radius:12px}.panel{padding:20px}.grid{display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:12px;align-items:end}.field label{display:block;color:var(--muted);font-size:12.5px;font-weight:700;margin-bottom:2px}.ticker{height:46px;border-top:1px solid var(--line)}
+    #results{margin-top:24px}.chart{height:720px;position:relative}.chart-head{display:flex;justify-content:space-between;align-items:center;padding:15px 20px;border-bottom:1px solid var(--line)}.chart-head .mono{font-weight:700;font-size:15px}.liveBadge{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)}.liveDot{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 0 0 rgba(31,184,122,.6);animation:pulse 1.6s infinite}@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(31,184,122,.55)}70%{box-shadow:0 0 0 8px rgba(31,184,122,0)}100%{box-shadow:0 0 0 0 rgba(31,184,122,0)}}
+    .cards{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px}.card{padding:20px;transition:border-color .15s}.card.full{grid-column:1/-1}.card h3{font-size:16px}.sub{color:var(--muted);font-size:13px;margin-top:4px;line-height:1.6}.level{display:flex;justify-content:space-between;border-bottom:1px solid var(--line);padding:11px 0}.level:last-child{border-bottom:0}.level span{color:var(--muted);font-size:13.5px}.ok{color:var(--green)}.bad{color:var(--red)}.note{background:var(--panel2);border:1px solid var(--line);border-radius:9px;padding:15px;color:var(--muted);line-height:1.7;font-size:13.5px}
+    .verdict{display:inline-flex;align-items:center;gap:8px;padding:8px 16px;border-radius:100px;font-family:Cairo,sans-serif;font-weight:800;font-size:16px;margin-bottom:6px}.verdict.ok{background:rgba(31,184,122,.12);color:var(--green)}.verdict.bad{background:rgba(226,70,92,.12);color:var(--red)}.verdict.wait{background:var(--panel2);color:var(--muted)}
+    .indicator{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:14px}.mini{background:var(--panel2);border:1px solid var(--line);border-radius:9px;padding:11px}.mini span{display:block;color:var(--muted);font-size:11.5px;margin-bottom:2px}.mini b{font-family:"JetBrains Mono";direction:ltr;font-size:14px}.loader{color:var(--muted);padding:20px;display:flex;align-items:center;gap:12px;font-size:13.5px}.candle-spin{width:14px;height:20px;background:var(--gold);border-radius:2px;animation:spinCandle 1s ease-in-out infinite}@keyframes spinCandle{0%,100%{transform:scaleY(.4)}50%{transform:scaleY(1)}}
+    .smcLine{display:flex;justify-content:space-between;padding:7px 0;font-size:13px;color:var(--muted)}.smcLine b{color:var(--text)}
+    .dailyBox{margin-top:20px;padding:18px;background:var(--panel);border:1px solid var(--line);border-radius:12px}.dailyBox h4{margin:0 0 12px;font-family:Cairo,sans-serif;text-align:center;color:var(--gold2);font-size:14px;font-weight:700}.dailyStats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}.dailyStats div{text-align:center}.dailyStats b{display:block;font-size:19px;font-family:"JetBrains Mono"}.dailyStats span{color:var(--muted);font-size:11px}
+    @media(max-width:860px){.hero{grid-template-columns:1fr}.grid,.cards{grid-template-columns:1fr}.nav{flex-wrap:wrap;justify-content:flex-end}.chart{height:480px}.indicator{grid-template-columns:1fr 1fr}.dailyStats{grid-template-columns:1fr 1fr}.visual{order:-1;min-height:200px}}
   </style>
 </head>
 <body>
@@ -87,22 +103,22 @@
   <main>
     <section class="hero">
       <div>
-        <h1>شارت حي وتحليل دخول وأهداف للأعضاء فقط</h1>
-        <p>اختر السوق والفريم الزمني. الشارت ومؤشرات TradingView تظهر مباشرة، وتحليل العملات الرقمية يحسب RSI و MACD و EMA و ATR عبر الخادم.</p>
-        <a href="#analyzer" class="btn primary">ابدأ التحليل</a>
+        <span class="eyebrow">تحليل حي بلا تخمين</span>
+        <h1>قرار دخول واضح، وقف وأهداف محسوبة، على شارت يتحرك أمامك</h1>
+        <p>اختر السوق والفريم، والنظام يحسب RSI وMACD وBollinger وStochastic RSI، ويقرأ هيكل السوق بمنهج Smart Money Concepts (BOS، فجوات سيولة، Order Blocks)، قبل ما يقترح أي صفقة.</p>
+        <a href="#analyzer" class="btn primary">ابدأ التحليل الآن</a>
+        <div class="trustbar">
+          <span>البيانات من <b>Binance</b> و<b>Yahoo Finance</b></span>
+          <span>الشارت يتحدث <b>كل ثانية</b></span>
+          <span>صفقة فقط عند توافق <b>60%+</b> من المؤشرات</span>
+        </div>
       </div>
       <div class="visual">
-        <svg viewBox="0 0 520 220" fill="none">
-          <path d="M20 170L70 120L115 140L170 86L220 110L280 58L330 74L385 34L440 52L500 24" stroke="url(#g)" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
-          <g stroke="#455063" opacity=".75"><path d="M20 190H500"/><path d="M20 140H500"/><path d="M20 90H500"/><path d="M20 40H500"/></g>
-          <g stroke-width="5" stroke-linecap="round">
-            <path d="M70 96V146" stroke="#28d79c"/><path d="M170 62V112" stroke="#28d79c"/><path d="M280 34V84" stroke="#28d79c"/><path d="M385 18V58" stroke="#28d79c"/>
-            <path d="M115 118V166" stroke="#ff5874"/><path d="M220 88V132" stroke="#ff5874"/><path d="M330 54V98" stroke="#ff5874"/><path d="M440 36V74" stroke="#ff5874"/>
-          </g>
-          <defs><linearGradient id="g" x1="20" x2="500"><stop stop-color="#ff5874"/><stop offset=".5" stop-color="#f0c76f"/><stop offset="1" stop-color="#28d79c"/></linearGradient></defs>
-        </svg>
+        <div class="candles" id="heroCandles"></div>
       </div>
     </section>
+
+    <div class="pulse-strip" id="pulseStrip" aria-hidden="true"></div>
 
     <div id="memberDailyResults" class="dailyBox hidden"></div>
 
@@ -133,6 +149,19 @@
 
   <script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
   <script>
+    (function renderHeroCandles(){
+      const box=document.getElementById("heroCandles");
+      if(!box)return;
+      let h=50,bars="";
+      for(let i=0;i<28;i++){
+        h+=(Math.random()-0.46)*14; h=Math.max(18,Math.min(96,h));
+        const up=Math.random()>0.42;
+        bars+=`<i class="${up?"up":"down"}" style="height:${h}%;animation-delay:${i*35}ms"></i>`;
+      }
+      box.innerHTML=bars;
+      const strip=document.getElementById("pulseStrip");
+      if(strip){let s="";for(let i=0;i<90;i++){const hh=8+Math.random()*26;s+=`<i class="${Math.random()>0.45?"up":"down"}" style="height:${hh}px"></i>`}strip.innerHTML=s}
+    })();
     const MARKETS={crypto:{label:"العملات الرقمية",symbols:[["BINANCE:BTCUSDT","بيتكوين BTC/USDT","BTCUSDT"],["BINANCE:ETHUSDT","إيثريوم ETH/USDT","ETHUSDT"],["BINANCE:BNBUSDT","BNB/USDT","BNBUSDT"],["BINANCE:SOLUSDT","سولانا SOL/USDT","SOLUSDT"],["BINANCE:XRPUSDT","ريبل XRP/USDT","XRPUSDT"],["BINANCE:ADAUSDT","كاردانو ADA/USDT","ADAUSDT"],["BINANCE:DOGEUSDT","DOGE/USDT","DOGEUSDT"],["BINANCE:LINKUSDT","LINK/USDT","LINKUSDT"]]},forex:{label:"فوركس",symbols:[["FX:EURUSD","EUR/USD","EURUSD=X","yahoo"],["FX:GBPUSD","GBP/USD","GBPUSD=X","yahoo"],["FX:USDJPY","USD/JPY","USDJPY=X","yahoo"],["FX:AUDUSD","AUD/USD","AUDUSD=X","yahoo"]]},metals:{label:"المعادن",symbols:[["OANDA:XAUUSD","الذهب XAU/USD","PAXGUSDT"],["OANDA:XAGUSD","الفضة XAG/USD","SI=F","yahoo"]]},indices:{label:"المؤشرات والنفط",symbols:[["SP:SPX","S&amp;P 500","^GSPC","yahoo"],["NASDAQ:NDX","Nasdaq 100","^NDX","yahoo"],["TVC:DXY","DXY","DX-Y.NYB","yahoo"],["TVC:USOIL","WTI Oil","CL=F","yahoo"]]}};
     const TFS=[["1 دقيقة","1","1m","1m"],["5 دقائق","5","5m","5m"],["15 دقيقة","15","15m","15m"],["30 دقيقة","30","30m","30m"],["1 ساعة","60","1h","1h"],["4 ساعات","240","4h","4h"],["يومي","D","1D","1d"],["أسبوعي","W","1W","1w"]];
     let currentUser=null;
@@ -218,7 +247,7 @@
       liveChart.timeScale().fitContent();
     }
     const fp=n=>Number(n).toLocaleString("en-US",{maximumFractionDigits:n<1?6:n<100?4:2});
-    function renderAnalysis(d){const color=d.direction==="buy"?"ok":d.direction==="sell"?"bad":"";
+    function renderAnalysis(d){const pillClass=d.direction==="buy"?"ok":d.direction==="sell"?"bad":"wait";const icon=d.direction==="buy"?"▲":d.direction==="sell"?"▼":"○";
       const fngRow=d.fearGreed?`<div class="mini"><span>الخوف والطمع</span><b>${d.fearGreed.value} (${d.fearGreed.classification})</b></div>`:"";
       const htfRow=d.htfTrend?`<div class="mini"><span>اتجاه ${d.htfTrend.timeframe}</span><b class="${d.htfTrend.bullish?"ok":"bad"}">${d.htfTrend.bullish?"صاعد":"هابط"}</b></div>`:"";
       const stochRow=d.indicators.stochRsi!=null?`<div class="mini"><span>Stoch RSI</span><b>${d.indicators.stochRsi.toFixed(1)}</b></div>`:"";
@@ -228,7 +257,7 @@
       if(d.smc.bos)smcLines.push(`<div class="smcLine"><span>آخر كسر هيكل (BOS)</span><b class="${d.smc.bos.type==="bullish"?"ok":"bad"}">${d.smc.bos.type==="bullish"?"صاعد":"هابط"} عند ${fp(d.smc.bos.price)}</b></div>`);
       if(d.smc.nearOrderBlock)smcLines.push(`<div class="smcLine"><span>داخل Order Block</span><b class="${d.smc.nearOrderBlock.type==="bullish"?"ok":"bad"}">${d.smc.nearOrderBlock.type==="bullish"?"طلب (شراء)":"عرض (بيع)"}</b></div>`);
       if(d.smc.nearFvg)smcLines.push(`<div class="smcLine"><span>داخل فجوة سيولة FVG</span><b class="${d.smc.nearFvg.type==="bullish"?"ok":"bad"}">${d.smc.nearFvg.type==="bullish"?"صاعدة":"هابطة"}</b></div>`);
-      $("decision").innerHTML=`<div class="note"><h2 class="${color}">${d.verdict}</h2><p>قوة الإشارة: <b class="mono">${d.confidencePct}%</b> (${d.signals.length} مؤشرات مجتمعة)</p></div><div class="indicator"><div class="mini"><span>RSI</span><b>${d.indicators.rsi.toFixed(1)}</b></div>${stochRow}<div class="mini"><span>ATR</span><b>${fp(d.indicators.atr)}</b></div><div class="mini"><span>EMA20</span><b>${fp(d.indicators.ema20)}</b></div><div class="mini"><span>EMA50</span><b>${fp(d.indicators.ema50)}</b></div>${bbRow}${htfRow}${fngRow}</div><div style="margin-top:14px;border-top:1px solid var(--line);padding-top:8px">${smcLines.join("")}</div>`;
+      $("decision").innerHTML=`<div class="verdict ${pillClass}">${icon} ${d.verdict}</div><p class="sub">قوة الإشارة: <b class="mono">${d.confidencePct}%</b> (${d.signals.length} مؤشرات مجتمعة)</p><div class="indicator"><div class="mini"><span>RSI</span><b>${d.indicators.rsi.toFixed(1)}</b></div>${stochRow}<div class="mini"><span>ATR</span><b>${fp(d.indicators.atr)}</b></div><div class="mini"><span>EMA20</span><b>${fp(d.indicators.ema20)}</b></div><div class="mini"><span>EMA50</span><b>${fp(d.indicators.ema50)}</b></div>${bbRow}${htfRow}${fngRow}</div><div style="margin-top:14px;border-top:1px solid var(--line);padding-top:10px">${smcLines.join("")}</div>`;
       if(!d.levels){$("levels").innerHTML='<div class="note">لا توجد صفقة كافية القوة حاليا. النظام يرفض الدخول إلا بتوافق قوي جدا بين المؤشرات لتقليل الصفقات الخاسرة.</div>';return}
       $("levels").innerHTML=`<div class="sub" style="margin-bottom:8px">نسبة المخاطرة/العائد: <b class="mono ok">${d.levels.riskReward}</b> — وقف الخسارة مبني على هيكل السوق الفعلي</div>`+[["الدخول",d.levels.entry],["وقف الخسارة",d.levels.stopLoss],["الهدف الأول",d.levels.takeProfit1],["الهدف الثاني",d.levels.takeProfit2],["الهدف الثالث",d.levels.takeProfit3],["Pivot",d.pivots.pivot],["أعلى سعر حديث",d.pivots.swingHigh],["أدنى سعر حديث",d.pivots.swingLow]].map(x=>`<div class="level"><span>${x[0]}</span><b class="mono">${fp(x[1])}</b></div>`).join("")+'<p class="sub" style="margin-top:10px">كل هذه المستويات مرسومة مباشرة كخطوط على الشارت أعلاه.</p>'}
     let liveSource=null, liveTimer=null, priceTimer=null, lastCandle=null;
@@ -268,7 +297,7 @@
     async function refreshAnalysis(meta,tf){
       try{const d=await api("/api/analyze",{symbol:meta[2],provider:meta[3]||"binance",interval:tf[3]});renderLiveChart(d);renderAnalysis(d)}catch(e){}
     }
-    $("analyzeBtn").onclick=async()=>{const market=marketSelect.value,tf=TFS[Number(timeframeSelect.value)],sym=symbolSelect.value,meta=MARKETS[market].symbols.find(s=>s[0]===sym);$("results").classList.remove("hidden");$("chartSym").textContent=sym;$("chartTf").textContent=tf[0];renderSummary(sym,tf);$("decision").innerHTML='<div class="loader">جاري التحليل...</div>';$("levels").innerHTML='<div class="loader">جاري حساب المستويات...</div>';stopLiveFeed(); if(!meta[2]){renderFallbackChart(sym,tf);$("decision").innerHTML='<div class="note">لهذه الأداة استخدم ملخص TradingView بالأسفل، لأن بيانات الدخول الدقيقة غير متاحة حاليا لهذا الرمز.</div>';$("levels").innerHTML='<div class="note">ضع الوقف خلف آخر قمة أو قاع واضح، واختر أهدافا لا تقل عن نسبة 1:2.</div>';return} try{const d=await api("/api/analyze",{symbol:meta[2],provider:meta[3]||"binance",interval:tf[3]});renderLiveChart(d);renderAnalysis(d);startLiveFeed(meta,tf)}catch(e){$("decision").innerHTML=`<div class="note bad">${e.message}</div>`;$("levels").innerHTML='<div class="note">تحقق من اتصال الخادم بالإنترنت أو جرب أداة أخرى.</div>'}};
+    $("analyzeBtn").onclick=async()=>{const market=marketSelect.value,tf=TFS[Number(timeframeSelect.value)],sym=symbolSelect.value,meta=MARKETS[market].symbols.find(s=>s[0]===sym);$("results").classList.remove("hidden");$("chartSym").textContent=sym;$("chartTf").textContent=tf[0];renderSummary(sym,tf);$("decision").innerHTML='<div class="loader"><span class="candle-spin"></span>جاري التحليل...</div>';$("levels").innerHTML='<div class="loader"><span class="candle-spin"></span>جاري حساب المستويات...</div>';stopLiveFeed(); if(!meta[2]){renderFallbackChart(sym,tf);$("decision").innerHTML='<div class="note">لهذه الأداة استخدم ملخص TradingView بالأسفل، لأن بيانات الدخول الدقيقة غير متاحة حاليا لهذا الرمز.</div>';$("levels").innerHTML='<div class="note">ضع الوقف خلف آخر قمة أو قاع واضح، واختر أهدافا لا تقل عن نسبة 1:2.</div>';return} try{const d=await api("/api/analyze",{symbol:meta[2],provider:meta[3]||"binance",interval:tf[3]});renderLiveChart(d);renderAnalysis(d);startLiveFeed(meta,tf)}catch(e){$("decision").innerHTML=`<div class="note bad">${e.message}</div>`;$("levels").innerHTML='<div class="note">تحقق من اتصال الخادم بالإنترنت أو جرب أداة أخرى.</div>'}};
     tvScript($("tickerTape"),"https://s3.tradingview.com/external-embedding/embed-widget-ticker-tape.js",{symbols:[{proName:"BINANCE:BTCUSDT",title:"BTC"},{proName:"BINANCE:ETHUSDT",title:"ETH"},{proName:"FX:EURUSD",title:"EUR/USD"},{proName:"OANDA:XAUUSD",title:"GOLD"},{proName:"TVC:DXY",title:"DXY"}],showSymbolLogo:true,isTransparent:true,displayMode:"adaptive",colorTheme:"dark",locale:"ar"});
     fill(); boot();
   </script>
