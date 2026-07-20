@@ -438,6 +438,35 @@ function addPlanDate(plan) {
   return d.toISOString();
 }
 
+function computeHistoricalSignals(closes, highs, lows, volumes, times, ema20Arr, ema50Arr, rsiArr, macdData, bb, stochRsiArr, volAvg) {
+  const markers = [];
+  let lastDirection = "none";
+  const start = 55; // بداية بعد ما تستقر كل المؤشرات (EMA50 وغيرها)
+  for (let i = start; i < closes.length; i++) {
+    if (ema20Arr[i] == null || ema50Arr[i] == null || rsiArr[i] == null) continue;
+    let score = 0, count = 0;
+    score += ema20Arr[i] > ema50Arr[i] ? 1 : -1; count++;
+    score += closes[i] > ema20Arr[i] ? 1 : -1; count++;
+    score += macdData.line[i] > macdData.signal[i] ? 1 : -1; count++;
+    score += rsiArr[i] > 50 ? 1 : -1; count++;
+    if (stochRsiArr[i] != null) { score += stochRsiArr[i] < 20 ? 1 : stochRsiArr[i] > 80 ? -1 : 0; count++; }
+    if (bb.upper[i] != null) { score += closes[i] > bb.upper[i] ? 1 : closes[i] < bb.lower[i] ? -1 : 0; count++; }
+    if (volAvg[i] != null) {
+      const priceUp = closes[i] > closes[i - 1];
+      const volConfirms = volumes[i] > volAvg[i] * 1.2;
+      score += volConfirms ? (priceUp ? 1 : -1) : 0; count++;
+    }
+    // عتبة أخف من قرار التداول الحي، لأن هذي إشارات توضيحية على الشارت فقط وليست قرار تداول فعلي
+    const threshold = Math.max(2, Math.ceil(count * 0.45));
+    const direction = score >= threshold ? "buy" : score <= -threshold ? "sell" : "none";
+    if (direction !== "none" && direction !== lastDirection) {
+      markers.push({ time: times[i], type: direction, price: direction === "buy" ? lows[i] : highs[i] });
+      lastDirection = direction;
+    }
+  }
+  return markers.slice(-12); // آخر 12 إشارة تاريخية بس لتفادي الازدحام
+}
+
 async function analyze(req, res) {
   const user = await authUser(req);
   if (!user) return json(res, 401, { error: "سجل الدخول أولا." });
@@ -599,9 +628,11 @@ async function analyze(req, res) {
     candles.push({ time: times[i], open: opens[i], high: highs[i], low: lows[i], close: closes[i] });
   }
 
+  const historyMarkers = computeHistoricalSignals(closes, highs, lows, volumes, times, ema20, ema50, rsiArr, macdData, bb, stochRsiArr, volAvg);
+
   return json(res, 200, {
     currentPrice, score, confidencePct, confidenceLabel, verdict, direction,
-    indicators, pivots, levels, signals, htfTrend, fearGreed, smc, candles
+    indicators, pivots, levels, signals, htfTrend, fearGreed, smc, candles, historyMarkers
   });
 }
 
