@@ -65,15 +65,6 @@
         <button class="primary full" id="signupBtn">إنشاء الحساب</button>
         <a class="switch" href="#" id="toLogin">لديك حساب؟ تسجيل الدخول</a>
       </section>
-      <section id="verifyView" class="hidden">
-        <h2>تأكيد البريد الإلكتروني</h2>
-        <p>أرسلنا رمز تحقق من 6 أرقام إلى بريدك. أدخله لتأكيد الحساب.</p>
-        <div class="err" id="verifyErr"></div>
-        <input id="verifyCode" placeholder="رمز التحقق" class="mono" style="text-align:center" maxlength="6">
-        <button class="primary full" id="verifyBtn">تأكيد</button>
-        <a class="switch" href="#" id="resendCode">إعادة إرسال الرمز</a>
-        <a class="switch" href="#" id="verifyBackToLogin">تسجيل خروج والعودة لتسجيل الدخول</a>
-      </section>
       <section id="subscribeView" class="hidden">
         <h2>تفعيل العضوية</h2>
         <p>حسابك محفوظ على الخادم. أدخل مفتاح التفعيل الذي حصلت عليه لتفعيل عضويتك.</p>
@@ -168,23 +159,19 @@
     const $=id=>document.getElementById(id);
     const API_BASE=location.protocol==="file:"?"http://localhost:3000":"";
     const api=(url,body)=>fetch(API_BASE+url,{method:body?"POST":"GET",headers:{"Content-Type":"application/json"},credentials:"include",body:body?JSON.stringify(body):undefined}).then(async r=>{const d=await r.json();if(!r.ok)throw new Error(d.error||"تعذر تنفيذ الطلب");return d});
-    function showAuth(name){["loginView","signupView","verifyView","subscribeView"].forEach(id=>$(id).classList.toggle("hidden",id!==name))}
+    function showAuth(name){["loginView","signupView","subscribeView"].forEach(id=>$(id).classList.toggle("hidden",id!==name))}
     function enter(user){currentUser=user;$("gate").classList.add("hidden");$("memberGreeting").textContent=user.name;$("adminLink").classList.toggle("hidden",user.role!=="admin")}
     function routeUser(user){
       currentUser=user;
       if(user.role==="admin"){enter(user);return}
-      if(!user.emailVerified){showAuth("verifyView");$("gate").classList.remove("hidden");return}
       if(!user.subscribed){showAuth("subscribeView");$("gate").classList.remove("hidden");return}
       enter(user);
     }
     $("toSignup").onclick=e=>{e.preventDefault();showAuth("signupView")}; $("toLogin").onclick=e=>{e.preventDefault();showAuth("loginView")};
     $("signupBtn").onclick=async()=>{try{const d=await api("/api/signup",{name:$("signupName").value,email:$("signupEmail").value,password:$("signupPassword").value});routeUser(d.user)}catch(e){$("signupErr").textContent=e.message}};
     $("loginBtn").onclick=async()=>{try{const d=await api("/api/login",{email:$("loginEmail").value,password:$("loginPassword").value});routeUser(d.user)}catch(e){$("loginErr").textContent=e.message}};
-    $("verifyBtn").onclick=async()=>{try{const d=await api("/api/verify-email",{code:$("verifyCode").value});routeUser(d.user)}catch(e){$("verifyErr").textContent=e.message}};
-    $("resendCode").onclick=async e=>{e.preventDefault();$("verifyErr").style.color="";$("verifyErr").textContent="";try{await api("/api/resend-verification",{});$("verifyErr").style.color="var(--green)";$("verifyErr").textContent="تم إرسال رمز جديد لبريدك."}catch(e){$("verifyErr").textContent=e.message}};
     $("redeemBtn").onclick=async()=>{try{const d=await api("/api/redeem",{code:$("keyInput").value});enter(d.user)}catch(e){$("subErr").textContent=e.message}};
     $("backToLogin").onclick=async e=>{e.preventDefault();await api("/api/logout",{});$("keyInput").value="";$("subErr").textContent="";showAuth("loginView")};
-    $("verifyBackToLogin").onclick=async e=>{e.preventDefault();await api("/api/logout",{});$("verifyCode").value="";$("verifyErr").textContent="";showAuth("loginView")};
     $("logoutBtn").onclick=async()=>{await api("/api/logout",{});location.reload()};
     async function boot(){const d=await api("/api/me"); if(!d.user){$("gate").classList.remove("hidden");return} routeUser(d.user)}
     async function loadDailyResults(){
@@ -222,7 +209,7 @@
         timeScale:{borderColor:"#2b3442",timeVisible:true,secondsVisible:false},
         crosshair:{mode:LightweightCharts.CrosshairMode.Normal}
       });
-      candleSeries=liveChart.addCandlestickSeries({upColor:"#28d79c",downColor:"#ff5874",borderVisible:false,wickUpColor:"#28d79c",wickDownColor:"#ff5874"});
+      candleSeries=liveChart.addCandlestickSeries({upColor:"#1fb87a",downColor:"#e2465c",borderVisible:false,wickUpColor:"#1fb87a",wickDownColor:"#e2465c"});
       new ResizeObserver(()=>liveChart.applyOptions({width:$("liveChart").clientWidth,height:$("liveChart").clientHeight})).observe($("liveChart"));
     }
     function clearChartLines(){chartPriceLines.forEach(l=>candleSeries.removePriceLine(l));chartPriceLines=[]}
@@ -232,17 +219,22 @@
       candleSeries.setData(d.candles);
       lastCandle=d.candles.length?{...d.candles[d.candles.length-1]}:null;
       clearChartLines();
+      if(d.pivots){
+        addChartLine(d.pivots.swingHigh,"#e2465c","▼ مقاومة",LightweightCharts.LineStyle.LargeDashed);
+        addChartLine(d.pivots.pivot,"#8b96a8","نقطة ارتكاز",LightweightCharts.LineStyle.SparseDotted);
+        addChartLine(d.pivots.swingLow,"#1fb87a","▲ دعم",LightweightCharts.LineStyle.LargeDashed);
+      }
       if(d.levels){
-        addChartLine(d.levels.entry,"#f0c76f","دخول");
-        addChartLine(d.levels.stopLoss,"#ff5874","وقف",LightweightCharts.LineStyle.Dashed);
-        addChartLine(d.levels.takeProfit1,"#28d79c","هدف 1",LightweightCharts.LineStyle.Dashed);
-        addChartLine(d.levels.takeProfit2,"#28d79c","هدف 2",LightweightCharts.LineStyle.Dotted);
-        addChartLine(d.levels.takeProfit3,"#28d79c","هدف 3",LightweightCharts.LineStyle.Dotted);
+        addChartLine(d.levels.entry,"#e0bb7c","⭐ دخول");
+        addChartLine(d.levels.stopLoss,"#e2465c","✕ وقف",LightweightCharts.LineStyle.Dashed);
+        addChartLine(d.levels.takeProfit1,"#1fb87a","هدف 1",LightweightCharts.LineStyle.Dashed);
+        addChartLine(d.levels.takeProfit2,"#1fb87a","هدف 2",LightweightCharts.LineStyle.Dotted);
+        addChartLine(d.levels.takeProfit3,"#1fb87a","هدف 3",LightweightCharts.LineStyle.Dotted);
       }
       if(d.smc.nearOrderBlock){addChartLine(d.smc.nearOrderBlock.top,"#9b8cff","OB أعلى",LightweightCharts.LineStyle.Dotted);addChartLine(d.smc.nearOrderBlock.bottom,"#9b8cff","OB أسفل",LightweightCharts.LineStyle.Dotted)}
       if(d.smc.nearFvg){addChartLine(d.smc.nearFvg.top,"#4fb3d7","FVG أعلى",LightweightCharts.LineStyle.Dotted);addChartLine(d.smc.nearFvg.bottom,"#4fb3d7","FVG أسفل",LightweightCharts.LineStyle.Dotted)}
       const markers=[];
-      if(d.smc.bos)markers.push({time:d.smc.bos.time,position:d.smc.bos.type==="bullish"?"belowBar":"aboveBar",color:d.smc.bos.type==="bullish"?"#28d79c":"#ff5874",shape:d.smc.bos.type==="bullish"?"arrowUp":"arrowDown",text:"BOS"});
+      if(d.smc.bos)markers.push({time:d.smc.bos.time,position:d.smc.bos.type==="bullish"?"belowBar":"aboveBar",color:d.smc.bos.type==="bullish"?"#1fb87a":"#e2465c",shape:d.smc.bos.type==="bullish"?"arrowUp":"arrowDown",text:"BOS"});
       candleSeries.setMarkers(markers);
       liveChart.timeScale().fitContent();
     }
