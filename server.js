@@ -154,9 +154,11 @@ async function ensureDb() {
       status TEXT NOT NULL DEFAULT 'open',
       result_r DOUBLE PRECISION,
       created_at TEXT NOT NULL,
-      closed_at TEXT
+      closed_at TEXT,
+      is_scalp BOOLEAN NOT NULL DEFAULT false
     );
   `);
+  await pool.query(`ALTER TABLE trade_signals ADD COLUMN IF NOT EXISTS is_scalp BOOLEAN NOT NULL DEFAULT false;`);
 }
 
 function rowToUser(row) {
@@ -562,13 +564,19 @@ async function analyze(req, res) {
   const confidencePct = maxPossible > 0 ? Math.round((Math.abs(score) / maxPossible) * 100) : 0;
   const confidenceLabel = confidencePct >= 75 ? "قوي جدا" : confidencePct >= 55 ? "قوي" : confidencePct >= 35 ? "متوسط" : "ضعيف";
 
-  // شرط دخول مشدد: لازم يكون التوافق قوي (60%+) ومعظم المؤشرات باتجاه واحد،
-  // هذا يقلل الصفقات الضعيفة (Noise) ويبقي فقط الفرص عالية الجودة
-  const strongThreshold = Math.max(3, Math.ceil(maxPossible * 0.6));
-  const direction = (score >= strongThreshold && confidencePct >= 60) ? "buy"
-    : (score <= -strongThreshold && confidencePct >= 60) ? "sell"
+  // وضع سكالب: يفعّل تلقائيًا على فريمي 1 و5 دقائق - عتبة أخف لصفقات أكثر تكرارا،
+  // مع وقف وأهداف أضيق تناسب حركة سريعة (لا يوجد أي "ضمان" ربح، هذا تخفيف عتبة فقط)
+  const isScalp = interval === "1m" || interval === "5m";
+
+  // شرط دخول عادي (فريمات أكبر): مشدد 60%+ لتقليل الضجيج ويبقي فقط الفرص عالية الجودة
+  const strongThreshold = isScalp
+    ? Math.max(2, Math.ceil(maxPossible * 0.4))
+    : Math.max(3, Math.ceil(maxPossible * 0.6));
+  const minConfidence = isScalp ? 40 : 60;
+  const direction = (score >= strongThreshold && confidencePct >= minConfidence) ? "buy"
+    : (score <= -strongThreshold && confidencePct >= minConfidence) ? "sell"
     : "none";
-  const verdict = direction === "buy" ? `شراء (${confidenceLabel})` : direction === "sell" ? `بيع (${confidenceLabel})` : "لا توجد صفقة كافية القوة - انتظار";
+  const verdict = direction === "buy" ? `${isScalp ? "سكالب شراء" : "شراء"} (${confidenceLabel})` : direction === "sell" ? `${isScalp ? "سكالب بيع" : "بيع"} (${confidenceLabel})` : "لا توجد صفقة كافية القوة - انتظار";
 
   const pIdx = closes.length - 2;
   const pivot = (highs[pIdx] + lows[pIdx] + closes[pIdx]) / 3;
@@ -589,10 +597,14 @@ async function analyze(req, res) {
   if (direction !== "none") {
     const entry = currentPrice;
     const atrValue = indicators.atr;
-    // وقف خسارة ذكي: خلف آخر قمة/قاع فعلي بالهيكل بدل رقم ثابت،
-    // مع حد أدنى وأقصى مبني على ATR لتفادي وقف ضيق جدا أو واسع جدا
     let stopLoss;
-    if (direction === "buy") {
+    if (isScalp) {
+      // سكالب: وقف ضيق ثابت (0.6-1x ATR) بدون الاعتماد على هيكل بعيد، لصفقات سريعة
+      const dir = direction === "buy" ? -1 : 1;
+      stopLoss = entry + dir * atrValue * 0.8;
+    } else if (direction === "buy") {
+      // وقف خسارة ذكي: خلف آخر قمة/قاع فعلي بالهيكل بدل رقم ثابت،
+      // مع حد أدنى وأقصى مبني على ATR لتفادي وقف ضيق جدا أو واسع جدا
       const structuralStop = pivots.swingLow - atrValue * 0.3;
       const minStop = entry - atrValue * 1.2;
       const maxStop = entry - atrValue * 2.5;
@@ -603,22 +615,24 @@ async function analyze(req, res) {
       const maxStop = entry + atrValue * 2.5;
       stopLoss = Math.max(minStop, Math.min(structuralStop, maxStop));
     }
-    // الأهداف = مضاعفات من المخاطرة الفعلية (R) لضمان نسبة مخاطرة/عائد قوية وثابتة
+    // الأهداف = مضاعفات من المخاطرة الفعلية (R): سكالب أهداف أقرب لصفقات أسرع، عادي أهداف أبعد
     const risk = Math.abs(entry - stopLoss);
     const dir = direction === "buy" ? 1 : -1;
+    const mult = isScalp ? [1, 1.8, 2.5] : [1.5, 3, 5];
     levels = {
       entry,
       stopLoss,
-      takeProfit1: entry + dir * risk * 1.5,
-      takeProfit2: entry + dir * risk * 3,
-      takeProfit3: entry + dir * risk * 5,
+      takeProfit1: entry + dir * risk * mult[0],
+      takeProfit2: entry + dir * risk * mult[1],
+      takeProfit3: entry + dir * risk * mult[2],
       riskAmount: risk,
-      riskReward: "1:1.5 / 1:3 / 1:5"
+      riskReward: isScalp ? "1:1 / 1:1.8 / 1:2.5" : "1:1.5 / 1:3 / 1:5",
+      isScalp
     };
   }
 
   if (levels) {
-    await logTradeSignal(symbol, cleanProvider, direction, levels);
+    await logTradeSignal(symbol, cleanProvider, direction, levels, isScalp);
   }
 
   const chartLen = 150;
@@ -1215,18 +1229,19 @@ async function fetchCurrentPriceOnly(symbol, provider) {
   }
 }
 
-async function logTradeSignal(symbol, provider, direction, levels) {
+async function logTradeSignal(symbol, provider, direction, levels, isScalp) {
   try {
-    const sixHoursAgo = new Date(Date.now() - 6 * 3600 * 1000).toISOString();
+    const dedupMinutes = isScalp ? 15 : 360; // سكالب: نافذة قصيرة تسمح بصفقات متكررة أسرع
+    const cutoff = new Date(Date.now() - dedupMinutes * 60 * 1000).toISOString();
     const { rows } = await pool.query(
       "SELECT id FROM trade_signals WHERE symbol = $1 AND status = 'open' AND created_at > $2 LIMIT 1",
-      [symbol, sixHoursAgo]
+      [symbol, cutoff]
     );
     if (rows.length) return; // فيه صفقة مفتوحة حديثة لنفس الرمز، لا داعي لتكرارها
     await pool.query(
-      `INSERT INTO trade_signals (id, symbol, provider, direction, entry, stop_loss, tp1, tp2, tp3, status, created_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'open',$10)`,
-      [crypto.randomUUID(), symbol, provider, direction, levels.entry, levels.stopLoss, levels.takeProfit1, levels.takeProfit2, levels.takeProfit3, new Date().toISOString()]
+      `INSERT INTO trade_signals (id, symbol, provider, direction, entry, stop_loss, tp1, tp2, tp3, status, created_at, is_scalp)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'open',$10,$11)`,
+      [crypto.randomUUID(), symbol, provider, direction, levels.entry, levels.stopLoss, levels.takeProfit1, levels.takeProfit2, levels.takeProfit3, new Date().toISOString(), Boolean(isScalp)]
     );
     // ملاحظة: إشعارات تلغرام/الإيميل معطّلة حاليًا بطلب صاحب الموقع
   } catch (e) {
@@ -1241,16 +1256,17 @@ async function checkOpenSignals() {
       const price = await fetchCurrentPriceOnly(s.symbol, s.provider);
       if (price == null) continue;
       let status = null, resultR = null;
+      const mult = s.is_scalp ? [1, 1.8, 2.5] : [1.5, 3, 5];
       if (s.direction === "buy") {
         if (price <= s.stop_loss) { status = "sl"; resultR = -1; }
-        else if (price >= s.tp3) { status = "tp3"; resultR = 5; }
-        else if (price >= s.tp2) { status = "tp2"; resultR = 3; }
-        else if (price >= s.tp1) { status = "tp1"; resultR = 1.5; }
+        else if (price >= s.tp3) { status = "tp3"; resultR = mult[2]; }
+        else if (price >= s.tp2) { status = "tp2"; resultR = mult[1]; }
+        else if (price >= s.tp1) { status = "tp1"; resultR = mult[0]; }
       } else {
         if (price >= s.stop_loss) { status = "sl"; resultR = -1; }
-        else if (price <= s.tp3) { status = "tp3"; resultR = 5; }
-        else if (price <= s.tp2) { status = "tp2"; resultR = 3; }
-        else if (price <= s.tp1) { status = "tp1"; resultR = 1.5; }
+        else if (price <= s.tp3) { status = "tp3"; resultR = mult[2]; }
+        else if (price <= s.tp2) { status = "tp2"; resultR = mult[1]; }
+        else if (price <= s.tp1) { status = "tp1"; resultR = mult[0]; }
       }
       if (status) {
         await pool.query(
